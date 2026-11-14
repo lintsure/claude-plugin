@@ -1,0 +1,14 @@
+{
+  "name": "lintsure",
+  "owner": { "name": "Lintsure", "url": "https://lintsure.com" },
+  "metadata": { "description": "Lintsure for Claude Code: security and compliance checks on the code your agent writes, with a workspace that tracks findings, decisions and verified fixes." },
+  "plugins": [
+    {
+      "name": "lintsure",
+      "source": "./plugins/lintsure",
+      "description": "Checks the code your agent writes against GDPR, the EU AI Act, OWASP Top 10, OWASP LLM Top 10, CWE Top 25 and the CRA. Scans run on your machine; only findings reach your workspace.",
+      "category": "security",
+      "homepage": "https://lintsure.com"
+    }
+  ]
+}

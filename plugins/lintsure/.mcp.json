@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "lintsure": {
+      "command": "npx",
+      "args": ["-y", "@lintsure/mcp@0.3.10"]
+    },
+    "lintsure-workspace": {
+      "type": "http",
+      "url": "${LINTSURE_URL:-https://lintsure.com}/mcp",
+      "headers": { "Authorization": "Bearer ${LINTSURE_API_KEY}" }
+    }
+  }
+}

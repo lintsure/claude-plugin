@@ -1,0 +1,10 @@
+{
+  "name": "lintsure",
+  "version": "0.1.0",
+  "description": "Security and compliance checks on the code your agent writes. Scans run locally; findings, decisions and verified fixes go to your Lintsure workspace. Not an audit or legal advice.",
+  "author": { "name": "Lintsure", "url": "https://lintsure.com" },
+  "homepage": "https://lintsure.com/docs/mcp",
+  "repository": "https://github.com/lintsure/claude-plugin",
+  "license": "Apache-2.0",
+  "keywords": ["security", "compliance", "gdpr", "eu-ai-act", "owasp", "mcp"]
+}
