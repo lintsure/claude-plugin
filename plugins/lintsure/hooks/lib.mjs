@@ -19,7 +19,27 @@ export function input() {
   let inp = {}; try { inp = JSON.parse(readFileSync(0, "utf8") || "{}"); } catch { /* empty */ }
   if (inp.cwd) CWD = inp.cwd;
   if (inp.session_id) SESSION = createHash("sha256").update(String(inp.session_id)).digest("hex").slice(0, 16);
+  if ((process.env.LINTSURE_RECORD || "") === "1") record(inp);
   return inp;
+}
+
+// Replay recorder (opt-in, LINTSURE_RECORD=1): saves what a hook was given so a person can label it and the replay
+// benchmark (scripts/replay.mjs) can run it against later guard versions. Paths become repo-relative, the session id
+// and transcript path are dropped, and anything that looks like a key or token is masked. Stays in .lintsure/replay/.
+const KEYLIKE = /\b(?:sk|pk|rk|ghp|gho|ghs|github_pat|xox[abprs]|glpat|npm|AKIA)[-_A-Za-z0-9]{10,}|\beyJ[\w-]{15,}\.[\w-]{10,}\.[\w-]{5,}/g;
+export function normalizeForReplay(inp) {
+  const root = String(inp.cwd || "").replace(/\\/g, "/");
+  const walk = (v) => typeof v === "string" ? (root ? v.replace(/\\/g, "/").split(root + "/").join("") : v).replace(KEYLIKE, "[secret]").slice(0, 20000)
+    : Array.isArray(v) ? v.map(walk) : v && typeof v === "object" ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, walk(x)])) : v;
+  const { session_id, transcript_path, cwd, ...rest } = inp;
+  return walk(rest);
+}
+function record(inp) {
+  try {
+    const d = join(inp.cwd || process.cwd(), ".lintsure", "replay");
+    mkdirSync(d, { recursive: true });
+    appendFileSync(join(d, "inbox.jsonl"), JSON.stringify({ hook: basename(process.argv[1] || ""), input: normalizeForReplay(inp), expect: null }) + "\n");
+  } catch { /* fine */ }
 }
 export const off = () => (process.env.LINTSURE_HOOK || "").toLowerCase() === "off" || (process.env.LINTSURE_DRIFT || "").toLowerCase() === "off";
 
