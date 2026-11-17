@@ -11,7 +11,8 @@ import { excepted, globMatch, fileRules } from "../plugins/lintsure/hooks/lib.mj
 
 const HOOKS = join(dirname(fileURLToPath(import.meta.url)), "..", "plugins", "lintsure", "hooks");
 const RULES = join(HOOKS, "..", "skills", "lintsure-rules", "rules.mjs");
-const env = { ...process.env, LINTSURE_API_KEY: "", LINTSURE_URL: "http://127.0.0.1:9", LINTSURE_DRIFT: "", LINTSURE_HOOK: "", LINTSURE_PACKAGES: "offline" };
+const env = { ...process.env, LINTSURE_API_KEY: "", LINTSURE_URL: "http://127.0.0.1:9", LINTSURE_DRIFT: "", LINTSURE_HOOK: "", LINTSURE_PACKAGES: "offline", LINTSURE_ACTIVITY: "off" };
+process.env.LINTSURE_ACTIVITY = "off"; // in-process guard calls (adapter tests) must not write into this repo
 
 /** A small app: logger, db and auth modules, a migration, a test, brand CSS and components. Committed to git. */
 function fixture(rulesYml) {
@@ -36,9 +37,9 @@ function fixture(rulesYml) {
 
 let n = 0;
 /** Runs the hook like Claude Code would, after writing the file to disk (PostToolUse sees the edited file). */
-function hook(root, event, rel, content, tool = "Write") {
+function hook(root, event, rel, content, tool = "Write", extraEnv = {}) {
   const input = { session_id: `t${process.pid}-${++n}`, cwd: root, hook_event_name: event, tool_name: tool, tool_input: { file_path: join(root, rel), content, old_string: "x", new_string: content } };
-  const out = execFileSync("node", [join(HOOKS, "drift-guard.mjs")], { input: JSON.stringify(input), env, encoding: "utf8" });
+  const out = execFileSync("node", [join(HOOKS, "drift-guard.mjs")], { input: JSON.stringify(input), env: { ...env, ...extraEnv }, encoding: "utf8" });
   if (!out) return { said: "", deny: false, block: false };
   const o = JSON.parse(out);
   return { said: o.hookSpecificOutput?.additionalContext ?? o.hookSpecificOutput?.permissionDecisionReason ?? o.reason ?? "", deny: o.hookSpecificOutput?.permissionDecision === "deny", block: o.decision === "block" };
@@ -423,7 +424,7 @@ test("Threat Guard stays quiet on normal work and on writing about the threat", 
   assert.deepEqual(threatEdit("src/app.ts", "const art = 'artex'; // brand name\n"), []);
 });
 test("Threat Guard sends a match to the permission prompt with its source", () => {
-  const out = execFileSync(process.execPath, [join(HOOKS, "threat.mjs")], { input: JSON.stringify({ hook_event_name: "PreToolUse", tool_name: "Bash", cwd: tmpdir(), tool_input: { command: "git clone https://github.com/Autumn-27/ARTEX" } }), env: { ...process.env, LINTSURE_API_KEY: "", LINTSURE_PACKAGES: "offline" }, encoding: "utf8" });
+  const out = execFileSync(process.execPath, [join(HOOKS, "threat.mjs")], { input: JSON.stringify({ hook_event_name: "PreToolUse", tool_name: "Bash", cwd: tmpdir(), tool_input: { command: "git clone https://github.com/Autumn-27/ARTEX" } }), env: { ...process.env, LINTSURE_API_KEY: "", LINTSURE_PACKAGES: "offline", LINTSURE_ACTIVITY: "off" }, encoding: "utf8" });
   const r = JSON.parse(out).hookSpecificOutput;
   assert.equal(r.permissionDecision, "ask");
   assert.match(r.permissionDecisionReason, /FBI FLASH-20261113-001/);
@@ -434,7 +435,7 @@ test("Threat Guard sends a match to the permission prompt with its source", () =
 test("without a key, no hook contacts the hosted workspace", () => {
   const f = fixture(NO_RULES), log = join(f.root, "net.log"), pre = join(dirname(fileURLToPath(import.meta.url)), "net-log.mjs");
   writeFileSync(log, "");
-  const run = (file, input, extra = {}) => execFileSync(process.execPath, ["--import", pathToFileURL(pre).href, join(HOOKS, file)], { input: JSON.stringify({ cwd: f.root, session_id: "local-test", ...input }), env: { ...process.env, LINTSURE_API_KEY: "", NET_LOG: log, ...extra }, encoding: "utf8" });
+  const run = (file, input, extra = {}) => execFileSync(process.execPath, ["--import", pathToFileURL(pre).href, join(HOOKS, file)], { input: JSON.stringify({ cwd: f.root, session_id: "local-test", ...input }), env: { ...process.env, LINTSURE_API_KEY: "", NET_LOG: log, LINTSURE_ACTIVITY: "off", ...extra }, encoding: "utf8" });
   run("remember.mjs", { hook_event_name: "SessionStart", source: "startup" });
   run("remember.mjs", { hook_event_name: "UserPromptSubmit", prompt: "add a login page" });
   run("danger.mjs", { hook_event_name: "PreToolUse", tool_name: "Bash", tool_input: { command: "rm -rf src" } });
@@ -449,7 +450,7 @@ test("without a key, no hook contacts the hosted workspace", () => {
 test("with LINTSURE_PACKAGES=offline and no key, no hook makes any request at all", () => {
   const f = fixture(NO_RULES), log = join(f.root, "net.log"), pre = join(dirname(fileURLToPath(import.meta.url)), "net-log.mjs");
   writeFileSync(log, "");
-  for (const phase of ["PreToolUse", "PostToolUse"]) execFileSync(process.execPath, ["--import", pathToFileURL(pre).href, join(HOOKS, "drift-guard.mjs")], { input: JSON.stringify({ cwd: f.root, session_id: "off", hook_event_name: phase, tool_name: "Write", tool_input: { file_path: join(f.root, "package.json"), content: '{"dependencies":{"expresss":"1.0.0"}}' } }), env: { ...process.env, LINTSURE_API_KEY: "", LINTSURE_PACKAGES: "offline", NET_LOG: log }, encoding: "utf8" });
+  for (const phase of ["PreToolUse", "PostToolUse"]) execFileSync(process.execPath, ["--import", pathToFileURL(pre).href, join(HOOKS, "drift-guard.mjs")], { input: JSON.stringify({ cwd: f.root, session_id: "off", hook_event_name: phase, tool_name: "Write", tool_input: { file_path: join(f.root, "package.json"), content: '{"dependencies":{"expresss":"1.0.0"}}' } }), env: { ...process.env, LINTSURE_API_KEY: "", LINTSURE_PACKAGES: "offline", NET_LOG: log, LINTSURE_ACTIVITY: "off" }, encoding: "utf8" });
   assert.equal(readFileSync(log, "utf8"), "");
   f.done();
 });
@@ -528,9 +529,9 @@ test("gemini and codex: the real Danger Guard stops rm -rf src and lets ls throu
 
 test("activity log: catches land in .lintsure/activity.jsonl without code, private files are left out", () => {
   const { root, w, done } = fixture();
-  hook(root, "PostToolUse", "src/a.ts", "import { nothere } from './missing';\nexport const a = nothere;\n");
+  hook(root, "PostToolUse", "src/a.ts", "import { nothere } from './missing';\nexport const a = nothere;\n", "Write", { LINTSURE_ACTIVITY: "" });
   w("src/secret.ts", "// lintsure:private\nimport { gone } from './nope';\nexport const b = gone;\n");
-  hook(root, "PostToolUse", "src/secret.ts", "// lintsure:private\nimport { gone } from './nope';\nexport const b = gone;\n");
+  hook(root, "PostToolUse", "src/secret.ts", "// lintsure:private\nimport { gone } from './nope';\nexport const b = gone;\n", "Write", { LINTSURE_ACTIVITY: "" });
   const f = join(root, ".lintsure", "activity.jsonl");
   const rows = readFileSync(f, "utf8").trim().split("\n").map((l) => JSON.parse(l));
   assert.ok(rows.some((r) => r.type === "catch" && r.file === "src/a.ts"));
