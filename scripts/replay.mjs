@@ -37,7 +37,7 @@ function runCase(c) {
     const input = JSON.parse(JSON.stringify(c.input));
     if (input.tool_input?.file_path) input.tool_input.file_path = join(root, input.tool_input.file_path);
     let out = "";
-    try { out = execFileSync(process.execPath, [join(HOOKS, c.hook)], { input: JSON.stringify({ session_id: "replay", cwd: root, ...input }), env, encoding: "utf8", timeout: 20000 }); }
+    try { out = execFileSync(process.execPath, [join(HOOKS, c.hook)], { input: JSON.stringify({ session_id: `replay-${process.pid}-${Math.random().toString(36).slice(2)}`, cwd: root, ...input }), env, encoding: "utf8", timeout: 20000 }); }
     catch (e) { out = String(e.stdout || ""); if (e.status === 2) return "catch"; if (!out) return "error"; }
     return caught(out) ? "catch" : "pass";
   } finally { rmSync(root, { recursive: true, force: true }); }
