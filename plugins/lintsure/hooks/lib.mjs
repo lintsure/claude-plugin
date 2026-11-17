@@ -1,5 +1,5 @@
 // Shared by the Drift Guard hooks: workspace rules and memory, cached briefly so edits stay fast.
-import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, appendFileSync, statSync, renameSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join, basename } from "node:path";
@@ -14,9 +14,10 @@ const tag = createHash("sha256").update(KEY).digest("hex").slice(0, 12);
 export const quiet = () => process.exit(0);
 export const say = (o) => { process.stdout.write(JSON.stringify(o)); process.exit(0); };
 // Reports carry a short hash of the session id (never the id itself), so the workspace can group one session's events.
-let SESSION = null;
+let SESSION = null, CWD = null;
 export function input() {
   let inp = {}; try { inp = JSON.parse(readFileSync(0, "utf8") || "{}"); } catch { /* empty */ }
+  if (inp.cwd) CWD = inp.cwd;
   if (inp.session_id) SESSION = createHash("sha256").update(String(inp.session_id)).digest("hex").slice(0, 16);
   return inp;
 }
@@ -94,7 +95,37 @@ export async function wsRules(p, fresh) {
   } catch { return cached?.data ?? null; }
 }
 
+// A file that says "lintsure:private" in its first lines is never named in the activity log or repeated by Memory.
+const PRIVATE = /lintsure:private/;
+export function isPrivate(root, rel) {
+  if (!rel) return false;
+  try { return PRIVATE.test(readFileSync(join(root, rel), "utf8").slice(0, 2000)); } catch { return false; }
+}
+
+/** Local activity log: one JSON line per catch, decision or scan in .lintsure/activity.jsonl, with or without an API key.
+ *  Kind, rule, file, line and outcome only: never code, prompts, secrets or the reason text. Private files are left
+ *  out. Rolled over at 1 MB (one previous file kept). LINTSURE_ACTIVITY=off turns it off. Never throws. */
+export function activity(root, body) {
+  if ((process.env.LINTSURE_ACTIVITY || "").toLowerCase() === "off") return 0;
+  const at = new Date().toISOString(), rows = [];
+  for (const e of body.events || []) {
+    if (isPrivate(root, e.file)) continue;
+    rows.push({ at, type: "catch", kind: e.kind, rule: e.ruleId, file: e.file, line: e.line, outcome: e.outcome || "caught", session: SESSION });
+  }
+  if (body.change) rows.push({ at, type: "decision", scope: body.change.scope, rule: body.change.ruleId, file: isPrivate(root, body.change.item) ? undefined : body.change.item, session: SESSION });
+  if (body.scan) rows.push({ at, type: "scan", ...body.scan, session: SESSION });
+  if (!rows.length) return 0;
+  try {
+    const d = join(root, ".lintsure"), f = join(d, "activity.jsonl");
+    mkdirSync(d, { recursive: true });
+    try { if (statSync(f).size > 1_000_000) renameSync(f, f + ".1"); } catch { /* new file */ }
+    appendFileSync(f, rows.map((x) => JSON.stringify(x)).join("\n") + "\n");
+  } catch { /* read-only folder: fine */ }
+  return rows.length;
+}
+
 export async function report(body) {
+  activity(body.root || CWD || process.cwd(), body);
   if (!KEY) return [];
   try {
     const r = await fetch(`${API}/api/v1/drift`, { method: "POST", headers: H(), body: JSON.stringify({ ...body, session: SESSION }), signal: AbortSignal.timeout(3000) });

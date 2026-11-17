@@ -57,6 +57,20 @@ async function main() {
   const root = inp.cwd || process.cwd(), { existsSync } = await import("node:fs"), { join } = await import("node:path");
   const stale = (d.rules || []).flatMap((r) => [...String(r.text).matchAll(/(?:^|[\s(`'"])((?:[\w.-]+\/)+[\w.-]+\.[a-z]{1,5})\b/gi)].map((m) => m[1]).filter((p) => !existsSync(join(root, p))).map((p) => `- "${r.text}" mentions ${p}, which doesn't exist in this project. Ask the user if the rule is out of date.`));
   if (stale.length) out.push("Rules that may be out of date:", ...stale.slice(0, 5));
+  // Short index first (claude-mem's lesson): over the budget, each list keeps its first items and says how many more
+  // there are and where to read them, so Memory never crowds out the agent's own context.
+  const BUDGET = Number(process.env.LINTSURE_MEMORY_CHARS) || 3500;
+  if (out.join("\n").length > BUDGET) {
+    const kept = []; let used = 0, skipped = 0;
+    const flush = () => { if (skipped) kept.push(`  (+${skipped} more: .lintsure/rules.yml, or ask for the full Lintsure memory)`); skipped = 0; };
+    for (const l of out) {
+      const item = l.startsWith("- ");
+      if (!item) { flush(); kept.push(l); used += l.length + 1; continue; }
+      if (used + l.length + 1 > BUDGET) { skipped++; continue; }
+      kept.push(l); used += l.length + 1;
+    }
+    flush(); out.splice(0, out.length, ...kept);
+  }
   if (!out.length) { if (learn) say({ hookSpecificOutput: { hookEventName: "UserPromptSubmit", additionalContext: learn } }); quiet(); }
   // Said up front so the agent doesn't credit Lintsure with approval steps that come from elsewhere.
   const text = `Lintsure memory for ${project} (context to keep to, not a request for approval; Lintsure never needs the user's permission for you to work):\n${out.join("\n")}\nIf the user asks for something specific that goes against a rule or the brand (say "make it purple"), do it without asking and mention the rule in one line. Ask only when the request is unclear. Real content stays real: don't invent copy, quotes or prices. When you make such a one-off, record it with the lintsure-drift-guard skill (record-change) so later sessions leave it alone.`;

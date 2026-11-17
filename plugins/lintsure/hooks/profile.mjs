@@ -12,7 +12,8 @@ const SKIP = new Set(["node_modules", ".git", "dist", "build", ".next", ".astro"
 const STYLE = /\.(css|scss|sass|less|pcss)$/i;
 const UI = /\.(astro|tsx|jsx|vue|svelte|html)$/i;
 const GENERIC = new Set(["serif", "sans-serif", "monospace", "system-ui", "ui-sans-serif", "ui-serif", "ui-monospace", "inherit", "initial", "cursive", "fantasy", "emoji", "math", "-apple-system", "blinkmacsystemfont", "segoe ui", "roboto", "helvetica", "arial", "helvetica neue", "apple color emoji", "segoe ui emoji", "noto sans", "var"]);
-const read = (f, max = 200_000) => { try { const st = statSync(f); return st.size > max ? "" : readFileSync(f, "utf8"); } catch { return ""; } };
+// A file marked lintsure:private reads as empty, so nothing from it reaches Memory.
+const read = (f, max = 200_000) => { try { const st = statSync(f); const t = st.size > max ? "" : readFileSync(f, "utf8"); return /lintsure:private/.test(t.slice(0, 2000)) ? "" : t; } catch { return ""; } };
 const hex6 = (h) => { h = h.toLowerCase().replace("#", ""); if (h.length === 3 || h.length === 4) h = h.slice(0, 3).split("").map((c) => c + c).join(""); return h.length >= 6 ? `#${h.slice(0, 6)}` : null; };
 
 function walk(root, max = 4000) {

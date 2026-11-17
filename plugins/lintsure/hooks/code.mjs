@@ -1,6 +1,7 @@
 // Lintsure code checks: calls to things that don't exist, and copies of things that do.
 // Built to stay quiet when unsure: a false note in Guide mode makes the agent change working code.
 import { readFileSync, statSync, readdirSync, writeFileSync, mkdirSync } from "node:fs";
+import { isPrivate } from "./lib.mjs";
 import { join, dirname, resolve, relative } from "node:path";
 import { tmpdir } from "node:os";
 import { createHash } from "node:crypto";
@@ -123,7 +124,8 @@ export function projectMap(root, maxFiles = 12, maxNames = 40) {
   const byFile = {};
   for (const [name, files] of Object.entries(index)) for (const f of files) (byFile[f] ||= []).push(name);
   const rank = (f) => (/(^|\/)(lib|utils?|helpers?|services?|shared|core)\//.test(f) ? 0 : 1);
-  const files = Object.keys(byFile).sort((a, b) => rank(a) - rank(b) || byFile[b].length - byFile[a].length || a.localeCompare(b)).slice(0, maxFiles);
+  // Files marked lintsure:private are never named in Memory.
+  const files = Object.keys(byFile).filter((f) => !isPrivate(root, f)).sort((a, b) => rank(a) - rank(b) || byFile[b].length - byFile[a].length || a.localeCompare(b)).slice(0, maxFiles);
   const out = []; let n = 0;
   for (const f of files) {
     if (n >= maxNames) break;

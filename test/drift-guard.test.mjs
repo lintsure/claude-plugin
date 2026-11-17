@@ -525,3 +525,35 @@ test("gemini and codex: the real Danger Guard stops rm -rf src and lets ls throu
   assert.equal(agentHandle("codex", "danger", { hook_event_name: "PreToolUse", tool_name: "Bash", tool_input: { command: "rm -rf src" }, cwd: process.cwd() })?.hookSpecificOutput?.permissionDecision, "ask");
   assert.equal(agentHandle("gemini", "danger", { hook_event_name: "BeforeTool", tool_name: "run_shell_command", tool_input: { command: "ls" }, cwd: process.cwd() }), null);
 });
+
+test("activity log: catches land in .lintsure/activity.jsonl without code, private files are left out", () => {
+  const { root, w, done } = fixture();
+  hook(root, "PostToolUse", "src/a.ts", "import { nothere } from './missing';\nexport const a = nothere;\n");
+  w("src/secret.ts", "// lintsure:private\nimport { gone } from './nope';\nexport const b = gone;\n");
+  hook(root, "PostToolUse", "src/secret.ts", "// lintsure:private\nimport { gone } from './nope';\nexport const b = gone;\n");
+  const f = join(root, ".lintsure", "activity.jsonl");
+  const rows = readFileSync(f, "utf8").trim().split("\n").map((l) => JSON.parse(l));
+  assert.ok(rows.some((r) => r.type === "catch" && r.file === "src/a.ts"));
+  assert.ok(!rows.some((r) => r.file === "src/secret.ts"), "private file must not be logged");
+  assert.ok(rows.every((r) => !("detail" in r) && !("code" in r)));
+  done();
+});
+
+test("activity log can be switched off", () => {
+  const { root, done } = fixture();
+  const input = { session_id: "off1", cwd: root, hook_event_name: "PostToolUse", tool_name: "Write", tool_input: { file_path: join(root, "src/a.ts"), content: "import { x } from './missing';\n" } };
+  writeFileSync(join(root, "src/a.ts"), input.tool_input.content);
+  try { execFileSync("node", [join(HOOKS, "drift-guard.mjs")], { input: JSON.stringify(input), env: { ...env, LINTSURE_ACTIVITY: "off" }, encoding: "utf8" }); } catch { /* blocking exit is fine */ }
+  assert.ok(!readdirSync(join(root, ".lintsure")).includes("activity.jsonl"));
+  done();
+});
+
+test("memory stays within its budget and says how much more there is", () => {
+  const many = "mode: guide\nrules:\n" + Array.from({ length: 80 }, (_, i) => `  - note: "Rule number ${i} says something long enough to take up room in the memory text for the agent"\n`).join("");
+  const { root, done } = fixture(many);
+  const out = execFileSync("node", [join(HOOKS, "remember.mjs")], { input: JSON.stringify({ session_id: "mem1", cwd: root, hook_event_name: "SessionStart", source: "startup" }), env: { ...env, LINTSURE_MEMORY_CHARS: "1500" }, encoding: "utf8" });
+  const text = JSON.parse(out).hookSpecificOutput.additionalContext;
+  assert.match(text, /\(\+\d+ more/);
+  assert.ok(text.length < 1500 + 1200, `memory was ${text.length} chars`);
+  done();
+});
