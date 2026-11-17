@@ -5,8 +5,8 @@ import { normalizeForReplay } from "../plugins/lintsure/hooks/lib.mjs";
 import { wilson, caught } from "../scripts/replay.mjs";
 
 test("recorder keeps the input but not the machine, the session or keys", () => {
-  const n = normalizeForReplay({ session_id: "abc", transcript_path: "/x/t.jsonl", cwd: "C:\work\shop", hook_event_name: "PostToolUse",
-    tool_input: { file_path: "C:\work\shop\src\a.ts", content: "const k = 'sk_live_1234567890abcdef';" } });
+  const n = normalizeForReplay({ session_id: "abc", transcript_path: "/x/t.jsonl", cwd: String.raw`C:\work\shop`, hook_event_name: "PostToolUse",
+    tool_input: { file_path: String.raw`C:\work\shop\src\a.ts`, content: "const k = 'sk_live_1234567890abcdef';" } });
   assert.equal(n.session_id, undefined); assert.equal(n.cwd, undefined); assert.equal(n.transcript_path, undefined);
   assert.equal(n.tool_input.file_path, "src/a.ts");
   assert.match(n.tool_input.content, /\[secret\]/);
