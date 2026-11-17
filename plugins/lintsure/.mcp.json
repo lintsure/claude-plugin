@@ -2,7 +2,7 @@
   "mcpServers": {
     "lintsure": {
       "command": "npx",
-      "args": ["-y", "@lintsure/mcp@0.3.10"]
+      "args": ["-y", "@lintsure/mcp@0.3.11"]
     }
   }
 }

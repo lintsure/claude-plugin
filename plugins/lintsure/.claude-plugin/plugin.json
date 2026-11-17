@@ -1,6 +1,6 @@
 {
   "name": "lintsure",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Security and compliance guardrails for the code your agent writes: Drift, Danger and Threat guards, a local end-of-task scan, and memory across sessions. Runs on your machine and sends nothing unless you add a Lintsure API key. Not an audit or legal advice.",
   "author": {
     "name": "Lintsure",
