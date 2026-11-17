@@ -99,11 +99,17 @@ async function main() {
   try { writeFileSync(seenFile, JSON.stringify([...seen, ...fresh.map(fp)].slice(-500))); } catch { /* fine */ }
 
   const high = fresh.filter((f) => f.severity === "high");
-  const line = (f) => `- ${f.title} (${f.file}${f.line ? `:${f.line}` : ""}): ${f.fix}`;
+  // Check before calling it a problem (GitHub's lesson: findings with fixes, checked first). A Partial finding carries what
+  // Lintsure couldn't see; an exact change is offered when the rule has one.
+  const line = (f) => `- ${f.title} (${f.file}${f.line ? `:${f.line}` : ""}): ${f.fix}`
+    + (f.status === "partial" && f.unseen ? `
+  Check first: ${f.unseen}` : "")
+    + (f.patch ? `
+  Exact change: ${f.patch.old == null ? `add before line ${f.patch.line}` : `line ${f.patch.line} becomes`} ${JSON.stringify(f.patch.text.trim())}` : "");
   if (high.length) {
     say({
       decision: "block",
-      reason: `Lintsure found ${high.length} high-severity issue${high.length > 1 ? "s" : ""} in files you changed:\n${high.slice(0, 3).map(line).join("\n")}${high.length > 3 ? `\n…and ${high.length - 3} more (run the lintsure scan tool).` : ""}\nFix ${high.length > 1 ? "them" : "it"} now if it's quick and safe, or tell the user what you found and why you left it. Don't loop on this.`,
+      reason: `Lintsure found ${high.length} high-severity issue${high.length > 1 ? "s" : ""} in files you changed:\n${high.slice(0, 3).map(line).join("\n")}${high.length > 3 ? `\n…and ${high.length - 3} more (run the lintsure scan tool).` : ""}\nFor each one marked "Check first", read the code around it: if it isn't a real problem, say so in one line with the reason and leave the code alone. Fix the real ones now if it's quick and safe, or tell the user what you found and why you left it. Don't loop on this.`,
     });
   }
   // Not risky: stored in the workspace (when a key is set), and one short note for the user, no interruption.
