@@ -48,7 +48,11 @@ async function main() {
   let map = []; try { map = projectMap(inp.cwd || process.cwd()); } catch { /* fine */ }
   if (map.length) out.push("Where the project's functions are (use these; no need to search for them):", ...map);
   const at = (x) => (x.file ? ` (${x.file}${x.line ? `:${x.line}` : ""})` : "");
-  if (d.rules?.length) out.push("Rules you must keep to:", ...d.rules.slice(0, 30).map((r) => `- ${r.text}${r.kind === "protect" ? ` [don't edit: ${r.paths}]` : ""}`));
+  // Rules scoped to some files (a note or avoid rule with "when:") are shown when the agent edits one of those files,
+  // so Memory only carries the rules that apply everywhere, plus protected files the agent must know about up front.
+  const scoped = (d.rules || []).filter((r) => (r.kind === "note" || r.kind === "avoid") && r.paths), general = (d.rules || []).filter((r) => !scoped.includes(r));
+  if (general.length) out.push("Rules you must keep to:", ...general.slice(0, 30).map((r) => `- ${r.text}${r.kind === "protect" ? ` [don't edit: ${r.paths}]` : ""}`));
+  if (scoped.length) out.push(`- ${scoped.length} more rule${scoped.length > 1 ? "s apply" : " applies"} only to certain files (${[...new Set(scoped.map((r) => r.paths))].slice(0, 4).join("; ")}). Lintsure shows ${scoped.length > 1 ? "each" : "it"} when you edit one of those files.`);
   if (d.exceptions?.length) out.push("Agreed one-off exceptions (leave these as they are):", ...d.exceptions.slice(0, 10).map((x) => `- ${x.item}: ${x.after}`));
   if (m.decided?.length) out.push("Already decided, don't reopen or undo:", ...m.decided.slice(0, 15).map((x) => `- ${x.status === "accepted" ? "Accepted risk" : "Not a real problem"}: ${x.title}${at(x)}${x.reason ? `. ${x.reason}` : ""}`));
   if (m.verifiedFixes?.length) out.push("Fixed and verified, don't reintroduce:", ...m.verifiedFixes.slice(0, 15).map((x) => `- ${x.title}${at(x)}`));

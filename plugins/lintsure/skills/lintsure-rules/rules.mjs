@@ -85,7 +85,7 @@ function item(r) {
   if (r.kind === "avoid") lines.push(`  - avoid: ${q(r.pattern)}`, `    say: ${q(r.text)}`, ...(r.in ? [`    in: ${q(r.in)}`] : []));
   else if (r.kind === "protect") lines.push(`  - protect: ${q(r.paths)}`, `    say: ${q(r.text)}`);
   else if (r.kind === "deps") lines.push(`  - deps: ask`, `    say: ${q(r.text)}`);
-  else lines.push(`  - note: ${q(r.text)}`);
+  else lines.push(`  - note: ${q(r.text)}`, ...(r.when ? [`    when: ${q(r.when)}`] : []));
   return lines;
 }
 function write(list) {
