@@ -560,13 +560,14 @@ test("memory stays within its budget and says how much more there is", () => {
 });
 
 test("a rule with when: stays out of Memory and is shown once when a matching file is edited", () => {
+  const sid = `when-${process.pid}-${Date.now()}`;
   const { root, w, done } = fixture("mode: guide\nrules:\n  - note: \"Card amounts are integer cents\"\n    when: \"src/payments/**\"\n  - note: \"Use the shared logger\"\n");
-  const mem = execFileSync("node", [join(HOOKS, "remember.mjs")], { input: JSON.stringify({ session_id: "when1", cwd: root, hook_event_name: "SessionStart", source: "startup" }), env, encoding: "utf8" });
+  const mem = execFileSync("node", [join(HOOKS, "remember.mjs")], { input: JSON.stringify({ session_id: sid, cwd: root, hook_event_name: "SessionStart", source: "startup" }), env, encoding: "utf8" });
   const text = JSON.parse(mem).hookSpecificOutput.additionalContext;
   assert.match(text, /Use the shared logger/);
   assert.doesNotMatch(text, /integer cents/);
   assert.match(text, /1 more rule applies only to certain files \(src\/payments\/\*\*\)/);
-  const pre = (rel) => { const input = { session_id: "when1", cwd: root, hook_event_name: "PreToolUse", tool_name: "Write", tool_input: { file_path: join(root, rel), content: "export const x = 1;\n" } };
+  const pre = (rel) => { const input = { session_id: sid, cwd: root, hook_event_name: "PreToolUse", tool_name: "Write", tool_input: { file_path: join(root, rel), content: "export const x = 1;\n" } };
     const out = execFileSync("node", [join(HOOKS, "drift-guard.mjs")], { input: JSON.stringify(input), env, encoding: "utf8" }); return out ? JSON.parse(out).hookSpecificOutput?.additionalContext ?? "" : ""; };
   assert.doesNotMatch(pre("src/lib/other.ts"), /integer cents/);
   assert.match(pre("src/payments/charge.ts"), /Rule for these files: "Card amounts are integer cents"/);
