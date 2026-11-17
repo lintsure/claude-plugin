@@ -18,6 +18,17 @@ The guards are deterministic pattern checks, not an AI model: fast, the same eve
 
 **Other agents.** The same guards run in Cursor (`cursor/hooks.json`), Gemini CLI (`gemini/hooks.json`) and Codex (`codex/hooks.json`) through small adapters, so every agent checks the same things.
 
+**Skills in other agents.** The skills are standard `SKILL.md` folders. From a clone of this repo, one command copies them to every agent it finds (Codex and OpenCode in `~/.agents/skills`, Codex in `~/.codex/skills`, Gemini CLI in `~/.gemini/skills`):
+
+```bash
+node scripts/install-skills.mjs            # install for the agents found
+node scripts/install-skills.mjs --list     # see where, change nothing
+node scripts/install-skills.mjs --dir PATH # any other skills folder
+node scripts/install-skills.mjs --uninstall
+```
+
+It records what it wrote, never overwrites a folder that isn't its own, and uninstall removes only those folders.
+
 ## Install
 
 ```bash
@@ -48,4 +59,8 @@ claude mcp add --transport http lintsure-workspace https://lintsure.com/mcp --he
 claude --plugin-dir ./plugins/lintsure
 ```
 
-Lintsure reports what its checks found. It is not an audit, a certification or legal advice.
+## What it doesn't do
+
+- The guards are pattern checks on what the agent is about to do. They can miss things and they are not a sandbox: keep your normal permission settings.
+- The end-of-task scan reads source files only. It doesn't test a running app or check your dependencies for known vulnerabilities.
+- Lintsure reports what its checks found. It is not an audit, a certification or legal advice.
