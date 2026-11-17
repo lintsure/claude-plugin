@@ -8,7 +8,7 @@
 //   Everything else is stored and the user gets one short note. Clean runs are silent. Any error is silent.
 // Turn it off with LINTSURE_HOOK=off.
 import { execFileSync, execSync } from "node:child_process";
-import { project, wsRules } from "./lib.mjs";
+import { activity, project, wsRules } from "./lib.mjs";
 import { mkdtempSync, readFileSync, writeFileSync, existsSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, basename } from "node:path";
@@ -60,6 +60,8 @@ async function main() {
 
   const all = (report.findings || []).filter((f) => f.status !== "accepted");
   const project = basename(cwd);
+  // Local activity log: counts and the policy code only, so the local dashboard can show runs without an account.
+  activity(cwd, { scan: { open: all.length, gap: all.filter((f) => f.status === "gap").length, partial: all.filter((f) => f.status === "partial").length, policy: report.policy?.fingerprint, rules: report.rulesVersion } });
   let commit = "", branch = "";
   try { commit = git(cwd, ["rev-parse", "HEAD"]); branch = git(cwd, ["rev-parse", "--abbrev-ref", "HEAD"]); } catch { /* fine */ }
 
