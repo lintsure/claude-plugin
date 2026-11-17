@@ -1,0 +1,17 @@
+{
+  "hooks": {
+    "SessionStart": [{ "hooks": [{ "type": "command", "command": "node \"${extensionPath}/hooks/agents.mjs\" gemini remember", "timeout": 10000 }] }],
+    "BeforeTool": [
+      { "matcher": "run_shell_command", "hooks": [
+        { "type": "command", "command": "node \"${extensionPath}/hooks/agents.mjs\" gemini danger", "timeout": 10000 },
+        { "type": "command", "command": "node \"${extensionPath}/hooks/agents.mjs\" gemini threat", "timeout": 10000 }
+      ] },
+      { "matcher": "write_file|replace", "hooks": [
+        { "type": "command", "command": "node \"${extensionPath}/hooks/agents.mjs\" gemini drift", "timeout": 15000 },
+        { "type": "command", "command": "node \"${extensionPath}/hooks/agents.mjs\" gemini threat", "timeout": 10000 }
+      ] }
+    ],
+    "AfterTool": [{ "matcher": "write_file|replace", "hooks": [{ "type": "command", "command": "node \"${extensionPath}/hooks/agents.mjs\" gemini drift", "timeout": 15000 }] }],
+    "AfterAgent": [{ "hooks": [{ "type": "command", "command": "node \"${extensionPath}/hooks/agents.mjs\" gemini end", "timeout": 120000 }] }]
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "name": "lintsure-claude-plugin",
+  "private": true,
+  "type": "module",
+  "scripts": { "test": "node --test test/drift-guard.test.mjs" }
+}

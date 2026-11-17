@@ -1,0 +1,18 @@
+{
+  "description": "Lintsure guards for Codex: the same Danger, Threat and Drift guards, memory and end-of-task scan as the Claude Code plugin.",
+  "hooks": {
+    "SessionStart": [{ "matcher": "startup|resume", "hooks": [{ "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/agents.mjs\" codex remember" }] }],
+    "PreToolUse": [
+      { "matcher": "Bash", "hooks": [
+        { "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/agents.mjs\" codex danger" },
+        { "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/agents.mjs\" codex threat" }
+      ] },
+      { "matcher": "apply_patch", "hooks": [
+        { "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/agents.mjs\" codex drift" },
+        { "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/agents.mjs\" codex threat" }
+      ] }
+    ],
+    "PostToolUse": [{ "matcher": "apply_patch", "hooks": [{ "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/agents.mjs\" codex drift" }] }],
+    "Stop": [{ "hooks": [{ "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/agents.mjs\" codex end" }] }]
+  }
+}

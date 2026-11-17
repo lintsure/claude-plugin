@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "hooks": {
+    "sessionStart": [{ "command": "node hooks/cursor.mjs remember", "timeout": 10 }],
+    "beforeShellExecution": [
+      { "command": "node hooks/cursor.mjs danger", "timeout": 10 },
+      { "command": "node hooks/cursor.mjs threat", "timeout": 10 }
+    ],
+    "preToolUse": [
+      { "command": "node hooks/cursor.mjs drift", "matcher": "Write", "timeout": 15 },
+      { "command": "node hooks/cursor.mjs threat", "matcher": "Write", "timeout": 10 }
+    ],
+    "postToolUse": [{ "command": "node hooks/cursor.mjs drift", "matcher": "Write", "timeout": 15 }],
+    "stop": [{ "command": "node \"${CURSOR_PLUGIN_ROOT}/hooks/cursor.mjs\" end", "timeout": 120 }]
+  }
+}
