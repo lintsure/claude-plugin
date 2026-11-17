@@ -23,7 +23,7 @@ For example "Lintsure: never let it touch the payment code" or "always use our l
    - `protect` with `paths` when it's about files or folders not being changed.
    - `avoid` with a `pattern` (a regular expression) and optional `in` (files) when it's about code that must not be added.
    - `deps` for "ask before adding packages".
-   - `note` when it can't be checked from the code ("keep the checkout simple"). Say honestly that this one is a reminder Lintsure can't check.
+   - `note` when it can't be checked from the code ("keep the checkout simple"). Say honestly that this one is a reminder Lintsure can't check. If it's about certain files only ("amounts in src/payments are cents"), add `when` with those files: it's then shown only when the agent edits them, which keeps Memory short.
 2. Tell the user in one plain sentence what will be caught, for example "I'll flag any change to files in src/payments/." Then write it with `rules.mjs write`.
 
 ## Show the rules

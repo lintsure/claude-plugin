@@ -118,7 +118,8 @@ function whisper(root, rel, data, s) {
     if (r.except && globMatch(rel, r.except)) continue;
     if (r.kind === "protect" && globMatch(rel, r.paths) && existsSync(resolve(root, rel))) once(`r:${r.id}`, `- Protected: "${r.text}" Leave this file as it is unless the user asked to change it.`);
     if (r.kind === "avoid" && r.paths && globMatch(rel, r.paths)) once(`r:${r.id}`, `- Rule here: "${r.text}"`);
-    if (r.kind === "note" && dir && r.text.includes(dir)) once(`r:${r.id}`, `- Reminder: "${r.text}"`);
+    if (r.kind === "note" && r.paths && globMatch(rel, r.paths)) once(`r:${r.id}`, `- Rule for these files: "${r.text}"`);
+    else if (r.kind === "note" && !r.paths && dir && r.text.includes(dir)) once(`r:${r.id}`, `- Reminder: "${r.text}"`);
   }
   for (const x of data.exceptions || []) if (x.item && globMatch(rel, x.item)) once(`x:${x.item}`, `- Agreed exception in this file: ${x.after}. Keep it.`);
   let p = null; try { p = profile(root); } catch { /* no profile */ }

@@ -78,10 +78,11 @@ export function fileRules(root) {
     const kind = ["avoid", "protect", "deps", "note"].find((k) => k in it);
     if (!kind) return null;
     const v = it[kind], say = it.say || (kind === "note" ? v : ""), except = it.except || null;
-    if (kind === "avoid") return { id: `file:${i}`, kind, pattern: v, paths: it.in || null, except, text: say || `Don't add code matching ${v}.` };
+    if (kind === "avoid") return { id: `file:${i}`, kind, pattern: v, paths: it.when || it.in || null, except, text: say || `Don't add code matching ${v}.` };
     if (kind === "protect") return { id: `file:${i}`, kind, paths: v, except, text: say || `Don't edit ${v}.` };
     if (kind === "deps") return { id: `file:${i}`, kind, except, text: say || "Don't add new dependencies without asking." };
-    return { id: `file:${i}`, kind, text: say };
+    // A note with "when:" (or "in:") globs applies only to those files: it's shown when the agent edits one, not in Memory.
+    return { id: `file:${i}`, kind, paths: it.when || it.in || null, text: say };
   }).filter((r) => r && r.text);
   out.mode = items.mode;
   return out;
