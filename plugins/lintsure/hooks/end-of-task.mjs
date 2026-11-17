@@ -8,6 +8,7 @@
 //   Everything else is stored and the user gets one short note. Clean runs are silent. Any error is silent.
 // Turn it off with LINTSURE_HOOK=off.
 import { execFileSync, execSync } from "node:child_process";
+import { project, wsRules } from "./lib.mjs";
 import { mkdtempSync, readFileSync, writeFileSync, existsSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, basename } from "node:path";
@@ -41,7 +42,18 @@ async function main() {
   let report;
   try {
     // One quoted command string works the same on Windows (npx is a .cmd there) and elsewhere, spaces in paths included.
-    execSync(`npx -y ${ENGINE} scan "${cwd.replace(/"/g, "")}" --json`, { cwd: out, stdio: "ignore", timeout: 100_000 });
+    // With an API key, hand the workspace rules this session already enforces to the scan, so its policy fingerprint
+    // covers them. The scan only hashes them; it never goes online. Without a key nothing changes.
+    const env = { ...process.env };
+    if (KEY) {
+      const ws = await wsRules(project(cwd)).catch(() => null);
+      if (ws) {
+        const f = join(out, "workspace-rules.json");
+        writeFileSync(f, JSON.stringify({ rules: ws.rules || [], exceptions: ws.exceptions || [], mode: ws.mode || null }));
+        env.LINTSURE_WORKSPACE_RULES = f;
+      }
+    }
+    execSync(`npx -y ${ENGINE} scan "${cwd.replace(/"/g, "")}" --json`, { cwd: out, stdio: "ignore", timeout: 100_000, env });
   } catch { /* the CLI exits non-zero when it finds gaps; the report is still written */ }
   try { report = JSON.parse(readFileSync(join(out, "lintsure-report.json"), "utf8")); } catch { rmSync(out, { recursive: true, force: true }); quiet(); }
   rmSync(out, { recursive: true, force: true });

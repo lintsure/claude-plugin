@@ -1,17 +1,22 @@
 # Lintsure for Claude Code
 
-A Claude Code plugin and a workspace connector for the hosted Lintsure workspace (beta).
+Guardrails and local security and compliance checks for the code your coding agent writes. Everything runs on your machine and sends nothing to lintsure.com. A hosted workspace (beta) is optional and only used when you add an API key.
 
-**Hosted or local?** The open-source Lintsure tool (`npx lintsure`, `@lintsure/mcp`) runs only on your machine, needs no account and sends nothing. This plugin adds the hosted workspace on lintsure.com: findings tracked over time, triage, decisions, verified fixes, agent tasks, site monitoring and a record of what broke and when. For that, the findings from your scans (check, file, line, fix, commit) are sent to your workspace. Your code is not, unless you turn on code excerpts. Full details: https://lintsure.com/docs/hosted
+**What it does in a session**
 
-The workspace is in beta. Expect rough edges; many visual and operational improvements are on the way.
-
-| Piece | What it is | Where it runs |
+| Piece | What it does | When it runs |
 | --- | --- | --- |
-| `lintsure` MCP server | `scan`, `explain_rule`, `explain_framework`, `classify` | Your machine (`npx @lintsure/mcp`). Code never leaves it. |
-| `lintsure-workspace` connector | Findings, decisions, tasks, verified fixes, scan reports | Hosted, `https://lintsure.com/mcp`, with your API key. Receives findings metadata, not code unless you turn on excerpts. |
-| Skills | `lintsure-check` (when to scan while coding), `lintsure-ship` (pre-launch check), `lintsure-triage` (sort real from not) | Claude reads them and decides when to use them. |
-| End-of-task hook | Scans locally when a task ends and reports the findings to the workspace. Stops Claude once for new high findings in files you changed; for the rest it stores them and leaves a short note. Silent when clean. | Scan on your machine; findings go to the workspace. |
+| Drift Guard | Checks each edit against your `.lintsure/rules.yml` (code to avoid, files to protect, no new dependencies) and against the code that exists: imports of missing files or packages, calls to functions that don't exist, copies of existing code, test tampering, lookalike packages, secrets | Before or after each Edit, Write and MultiEdit |
+| Danger Guard | Sends destructive commands (`rm -rf src`, `DROP TABLE`, `git push --force`, `git reset --hard`) to your permission prompt with the reason and a safer option. Text that only mentions them, like `grep "rm -rf"`, passes | Before each shell command |
+| Threat Guard | Asks before the agent pulls in known AI attack tooling or infrastructure named in public advisories | Before shell commands and edits |
+| Memory | Puts your rules, decisions and open findings back in front of the agent after a reset or compaction | Session start and each prompt |
+| End-of-task scan | One local scan against OWASP Top 10, OWASP LLM Top 10, CWE Top 25, GDPR, the EU AI Act and the EU CRA, when a session that changed files ends | When the agent stops |
+| `lintsure` MCP server | `scan`, `explain_rule`, `explain_framework`, `classify` | When the agent calls it |
+| Skills | `lintsure-check`, `lintsure-ship`, `lintsure-triage`, `lintsure-rules`, `lintsure-drift-guard` | Claude decides when they apply |
+
+The guards are deterministic pattern checks, not an AI model: fast, the same every time. They are seatbelts, not a sandbox. Not an audit or legal advice.
+
+**Other agents.** The same guards run in Cursor (`cursor/hooks.json`), Gemini CLI (`gemini/hooks.json`) and Codex (`codex/hooks.json`) through small adapters, so every agent checks the same things.
 
 ## Install
 
@@ -20,13 +25,14 @@ The workspace is in beta. Expect rough edges; many visual and operational improv
 /plugin install lintsure@lintsure
 ```
 
-Set your workspace key (create one at lintsure.com/app/keys) before starting Claude Code:
+**Local (no account):** that's it. Without `LINTSURE_API_KEY`, nothing goes to lintsure.com: no rules sync, no reports, no connection to the hosted workspace. Your rules come from `.lintsure/rules.yml` in your repo. The only things that leave your machine are the ones any npm user already does: `npx` downloads the engine, and Package Guard looks up the name and version of a package your agent adds on npm and OSV (turn that off with `LINTSURE_PACKAGES=offline`).
+
+**Hosted workspace (beta):** set your key (create one at lintsure.com/app/keys) before starting Claude Code, and add the workspace connector:
 
 ```bash
 export LINTSURE_API_KEY=lsk_...
+claude mcp add --transport http lintsure-workspace https://lintsure.com/mcp --header "Authorization: Bearer $LINTSURE_API_KEY"
 ```
-
-Without a key, everything local still works; only the workspace connector and reporting are off.
 
 ## Settings
 
