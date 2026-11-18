@@ -1,6 +1,8 @@
 # Lintsure for Claude Code
 
-Guardrails and local security and compliance checks for the code your coding agent writes. Everything runs on your machine and sends nothing to lintsure.com. A hosted workspace (beta) is optional and only used when you add an API key.
+**Catch your AI coding agent's mistakes before they ship.**
+
+Open-source guardrails for Claude Code, plus Cursor, Gemini CLI and Codex through adapters. Lintsure keeps your agent working to the rules you set in `.lintsure/rules.yml`, asks you before destructive commands run, and checks the code it writes against the security and compliance standards you connect: OWASP, GDPR, the EU AI Act and more. Everything runs on your machine and sends nothing to lintsure.com. A hosted workspace (beta) is optional and only used when you add an API key.
 
 **What it does in a session**
 
@@ -12,7 +14,7 @@ Guardrails and local security and compliance checks for the code your coding age
 | Memory | Puts your rules, decisions and open findings back in front of the agent after a reset or compaction, kept short. A rule with `when:` files is shown only when the agent edits one of them | Session start and each prompt |
 | End-of-task scan | One local scan against OWASP Top 10, OWASP LLM Top 10, CWE Top 25, GDPR, the EU AI Act and the EU CRA, when a session that changed files ends. Partial findings come with what to check first and the exact change when there is one | When the agent stops |
 | Activity log | Writes each catch and decision to `.lintsure/activity.jsonl` (rule, file, line, outcome; never code or secrets). Files marked `lintsure:private` are left out. `npx lintsure export --otlp-json` turns it into an OpenTelemetry file | Whenever a guard catches something |
-| `lintsure` MCP server | `scan`, `explain_rule`, `explain_framework`, `classify` | When the agent calls it |
+| `lintsure` MCP server | `scan`, `plan_checks`, `explain_rule`, `explain_framework`, `classify` | When the agent calls it |
 | Skills | `lintsure-check`, `lintsure-ship`, `lintsure-triage`, `lintsure-rules`, `lintsure-drift-guard` | Claude decides when they apply |
 
 The guards are deterministic pattern checks, not an AI model: fast, the same every time. They are seatbelts, not a sandbox. Not an audit or legal advice.

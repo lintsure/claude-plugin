@@ -5,7 +5,7 @@
     "url": "https://lintsure.com"
   },
   "metadata": {
-    "description": "Lintsure for Claude Code: guardrails and local security and compliance checks on the code your agent writes. An optional workspace (with an API key) tracks findings, decisions and verified fixes."
+    "description": "Catch your AI coding agent's mistakes before they ship. Guardrails for Claude Code that keep the agent on your rules, ask before destructive commands run, and check its code for security and privacy problems. Runs locally; an optional workspace needs an API key."
   },
   "plugins": [
     {
