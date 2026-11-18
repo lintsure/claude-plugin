@@ -9,8 +9,9 @@ Guardrails and local security and compliance checks for the code your coding age
 | Drift Guard | Checks each edit against your `.lintsure/rules.yml` (code to avoid, files to protect, no new dependencies) and against the code that exists: imports of missing files or packages, calls to functions that don't exist, copies of existing code, test tampering, lookalike packages, secrets | Before or after each Edit, Write and MultiEdit |
 | Danger Guard | Sends destructive commands (`rm -rf src`, `DROP TABLE`, `git push --force`, `git reset --hard`) to your permission prompt with the reason and a safer option. Text that only mentions them, like `grep "rm -rf"`, passes | Before each shell command |
 | Threat Guard | Asks before the agent pulls in known AI attack tooling or infrastructure named in public advisories | Before shell commands and edits |
-| Memory | Puts your rules, decisions and open findings back in front of the agent after a reset or compaction | Session start and each prompt |
-| End-of-task scan | One local scan against OWASP Top 10, OWASP LLM Top 10, CWE Top 25, GDPR, the EU AI Act and the EU CRA, when a session that changed files ends | When the agent stops |
+| Memory | Puts your rules, decisions and open findings back in front of the agent after a reset or compaction, kept short. A rule with `when:` files is shown only when the agent edits one of them | Session start and each prompt |
+| End-of-task scan | One local scan against OWASP Top 10, OWASP LLM Top 10, CWE Top 25, GDPR, the EU AI Act and the EU CRA, when a session that changed files ends. Partial findings come with what to check first and the exact change when there is one | When the agent stops |
+| Activity log | Writes each catch and decision to `.lintsure/activity.jsonl` (rule, file, line, outcome; never code or secrets). Files marked `lintsure:private` are left out. `npx lintsure export --otlp-json` turns it into an OpenTelemetry file | Whenever a guard catches something |
 | `lintsure` MCP server | `scan`, `explain_rule`, `explain_framework`, `classify` | When the agent calls it |
 | Skills | `lintsure-check`, `lintsure-ship`, `lintsure-triage`, `lintsure-rules`, `lintsure-drift-guard` | Claude decides when they apply |
 
@@ -51,6 +52,9 @@ claude mcp add --transport http lintsure-workspace https://lintsure.com/mcp --he
 | --- | --- | --- |
 | `LINTSURE_API_KEY` | none | Connects the workspace connector and lets the hook report scans and respect decisions. |
 | `LINTSURE_HOOK` | on | `off` disables the end-of-task check. |
+| `LINTSURE_ACTIVITY` | on | `off` stops writing `.lintsure/activity.jsonl`. |
+| `LINTSURE_MEMORY_CHARS` | 3500 | How long Memory may get before lists are shortened to "(+N more)". |
+| `LINTSURE_RECORD` | off | `1` saves each hook input (paths relative, keys masked) to `.lintsure/replay/inbox.jsonl`, for the guard replay test in `scripts/replay.mjs`. |
 | `LINTSURE_URL` | `https://lintsure.com` | Workspace address (for local development: `http://127.0.0.1:8787`). |
 
 ## Try it locally
