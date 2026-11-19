@@ -77,7 +77,7 @@ export function danger(cmd) {
     }
     if (/\bwrangler\s+d1\s+delete\b|\bdocker\s+system\s+prune\b|\bkubectl\s+delete\s+(?:ns|namespace)\b|\bterraform\s+destroy\b|\baws\s+s3\s+rb\b.*--force/.test(bare)) add("infra", "Deletes infrastructure or data that can't be brought back.", "Check with the user first and make a backup.");
     if (/(?:^|\s)>\s*\.env(?:\.\w+)?(?:\s|$)/.test(bare) || (word === "rm" && /(?:^|\s)\.env\b/.test(bare))) add("env", "Wipes the .env file with its secrets.", "Back it up, or edit only the line you need.");
-    // Attacker-style commands (from blue-team notes): no app needs these to build or test, so the user decides.
+    // Attacker-style commands: no app needs these to build or test, so the user decides.
     const ps = /^(?:powershell|pwsh)(?:\.exe)?$/i.test(word);
     if (ps && /\s-(?:e|ec|en|enc|encodedcommand)\s+[A-Za-z0-9+/=]{16,}/i.test(bare)) add("ps-hidden", "Runs PowerShell from base64, so nobody can read what it does.", "Run the plain command instead.");
     else if (ps && /\s-(?:w|win|window|windowstyle)\s+hidden\b/i.test(bare)) add("ps-hidden", "Runs PowerShell in a hidden window.", "Run it in the open.");
