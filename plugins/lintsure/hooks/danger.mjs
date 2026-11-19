@@ -25,6 +25,9 @@ const SQL_TOOL = /^(?:psql|mysql|sqlite3|mariadb|duckdb|cockroach|(?:npx\s+)?wra
 /** Each finding: what it would do, and a safer way. Empty when the command is fine. */
 export function danger(cmd) {
   const found = [], add = (id, why, safer) => found.push({ id, why, safer });
+  // Download piped straight into a shell: checked on the whole line, since segments() splits at the pipe.
+  if (/\b(?:curl|wget|iwr|irm|Invoke-WebRequest|Invoke-RestMethod)\b[^;&\n]*\|\s*(?:sudo\s+)?(?:(?:ba|z|da|k)?sh|iex|Invoke-Expression|python3?|node)\b/i.test(unquote(String(cmd || ""))))
+    add("pipe-run", "Downloads a script and runs it straight away, without anyone seeing what it does.", "Download it to a file, read it, then run it.");
   for (const raw of segments(String(cmd || ""))) {
     const seg = raw.replace(/^(?:sudo|env\s+\S+=\S+|time|nohup)\s+/g, "").trim(), bare = unquote(seg);
     const word = bare.split(/\s+/)[0];
@@ -48,6 +51,18 @@ export function danger(cmd) {
     }
     if (/\bwrangler\s+d1\s+delete\b|\bdocker\s+system\s+prune\b|\bkubectl\s+delete\s+(?:ns|namespace)\b|\bterraform\s+destroy\b|\baws\s+s3\s+rb\b.*--force/.test(bare)) add("infra", "Deletes infrastructure or data that can't be brought back.", "Check with the user first and make a backup.");
     if (/(?:^|\s)>\s*\.env(?:\.\w+)?(?:\s|$)/.test(bare) || (word === "rm" && /(?:^|\s)\.env\b/.test(bare))) add("env", "Wipes the .env file with its secrets.", "Back it up, or edit only the line you need.");
+    // Attacker-style commands (from blue-team notes): no app needs these to build or test, so the user decides.
+    const ps = /^(?:powershell|pwsh)(?:\.exe)?$/i.test(word);
+    if (ps && /\s-(?:e|ec|en|enc|encodedcommand)\s+[A-Za-z0-9+/=]{16,}/i.test(bare)) add("ps-hidden", "Runs PowerShell from base64, so nobody can read what it does.", "Run the plain command instead.");
+    else if (ps && /\s-(?:w|win|window|windowstyle)\s+hidden\b/i.test(bare)) add("ps-hidden", "Runs PowerShell in a hidden window.", "Run it in the open.");
+    if (/^(?:Set-MpPreference|Add-MpPreference)$/i.test(word) && /-Disable\w+|-Exclusion\w+/i.test(bare)) add("defender", "Turns off or carves holes in Windows Defender.", "Leave Defender on; ask the user to add an exclusion themselves if it's really needed.");
+    if (/^netsh$/i.test(word) && /\bfirewall\b.*\b(?:add|set)\b/i.test(bare) || /^(?:New-NetFirewallRule|Set-NetFirewallProfile)$/i.test(word) || /fDenyTSConnections/i.test(seg) || /^Enable-PSRemoting$/i.test(word)) add("firewall", "Opens the firewall or remote access on this machine.", "Ask the user to change firewall or remote access themselves.");
+    if (/^wevtutil$/i.test(word) && /\s(?:cl|clear-log)\b/i.test(bare) || /^(?:Clear-EventLog|Remove-EventLog)$/i.test(word) || (word === "history" && /\s-c\b/.test(bare)) || /^unset\s+HISTFILE\b|^(?:export\s+)?HIST(?:FILE)?SIZE=0\b/.test(bare) || /ConsoleHost_history\.txt|\.(?:bash|zsh)_history\b/.test(seg) && /^(?:rm|del|Remove-Item|Clear-Content|truncate)$/i.test(word)) add("wipe-logs", "Clears logs or shell history, which hides what was done.", "Leave logs and history alone.");
+    if (/^schtasks(?:\.exe)?$/i.test(word) && /\/create\b/i.test(bare) || /^(?:Register-ScheduledTask|Register-ScheduledJob|New-Service)$/i.test(word) || /^sc(?:\.exe)?$/i.test(word) && /\screate\b/i.test(bare) || word === "crontab" && !/\s-l\b/.test(bare) || /^(?:reg(?:\.exe)?\s+add|New-ItemProperty|Set-ItemProperty)\b/i.test(bare) && /CurrentVersion\\Run|Winlogon|\\Services\\/i.test(seg) || /__EventFilter|CommandLineEventConsumer|__FilterToConsumerBinding/.test(seg) || /Start Menu\\Programs\\Startup|Library\/Launch(?:Agents|Daemons)|\/etc\/cron|systemctl\s+enable\b/i.test(seg) && !/^(?:ls|cat|dir|Get-\w+|grep|rg|find)$/i.test(word)) add("persist", "Makes something start by itself (a scheduled task, service, startup entry or cron job).", "Ask the user before adding anything that runs on its own.");
+    if (/^certutil(?:\.exe)?$/i.test(word) && /-urlcache|-decode/i.test(bare) || /^bitsadmin(?:\.exe)?$/i.test(word) && /\/transfer\b/i.test(bare) || /^(?:mshta|regsvr32|rundll32)(?:\.exe)?$/i.test(word) && /https?:|\/i:/i.test(seg)) add("lolbin", "Uses a Windows system tool to download or run code, a common way to sneak past antivirus.", "Download with a normal tool into the project and check it first.");
+    if (/\blsass\b/i.test(seg) && /^(?:procdump|rundll32|Get-Process|tasklist)/i.test(word) && /MiniDump|-ma\b|\.dmp\b/i.test(seg) || /\b(?:mimikatz|sekurlsa|lazagne)\b/i.test(bare)) add("creds", "Copies passwords out of memory or the system.", "Stop; this isn't something a coding task needs.");
+    if (/^(?:winget|choco|brew|apt(?:-get)?|snap|npm|scoop)\b/.test(word) && /\binstall\b/.test(bare) && /\b(?:anydesk|teamviewer|rustdesk|screenconnect|atera|ngrok|cloudflared|tailscale)(?=[\s.@]|$)/i.test(bare)) add("remote-access", "Installs a tool that gives remote access to this machine.", "Ask the user to install remote-access tools themselves.");
+    if (/(?:^|[\s>])(?:\/etc\/hosts|\S*drivers\\etc\\hosts)\b/i.test(seg) && /^(?:tee|echo|printf|Add-Content|Set-Content|Out-File|sed)$/i.test(word) || />>?\s*(?:\/etc\/hosts|\S*drivers\\etc\\hosts)/i.test(seg)) add("hosts", "Changes the hosts file, which redirects web addresses for the whole machine.", "Use a local config or .env value instead.");
     if (/^(?:python3?|node|ruby|perl)\b/.test(word) && /\s-[ce]\s/.test(seg) && /\b(?:shutil\.rmtree|os\.remove|os\.unlink|rmSync|rmdirSync|unlinkSync|rimraf|FileUtils\.rm_rf)\b/.test(seg)) add("inline", "Runs a script that deletes files.", "Delete specific files you can name, or move them aside first.");
   }
   return found;
