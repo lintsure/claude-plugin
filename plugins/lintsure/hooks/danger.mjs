@@ -19,6 +19,26 @@ export function segments(cmd) {
   return out;
 }
 const unquote = (s) => s.replace(/'[^']*'|"[^"]*"/g, (m) => " ");
+const dq = (t) => t.trim().replace(/^(['"])([\s\S]*)\1$/, "$2");
+const WRAP = /^(?:sudo|doas|time|nohup|command|builtin|exec|nice|ionice|stdbuf|timeout|chrt|xargs|env|unbuffer)$/;
+/** One simple command as the shell would run it: leading NAME=value, wrappers (sudo, env, nice, xargs...) and
+ *  quoting or paths on the program name are taken off, so `"rm"`, `r''m`, `\rm`, `/bin/rm` and `sudo nice rm` all read as rm.
+ *  `bash -c '...'` and `eval ...` hand back their payload to check. A program name built from a variable is `dynamic`. */
+export function norm(raw) {
+  let s = raw.trim();
+  for (let i = 0; i < 8; i++) {
+    s = s.replace(/^(?:[A-Za-z_]\w*=(?:'[^']*'|"[^"]*"|\S*)(?:\s+|$))+/, "");
+    const m = s.match(/^(?:[^\s'"\\]|\\.|'[^']*'|"(?:[^"\\]|\\.)*")+/);
+    if (!m) return null;
+    const tok = m[0], rest = s.slice(tok.length);
+    const word = tok.replace(/\\(.)/g, "$1").replace(/['"]/g, "").replace(/^.*[\\/]/, "").replace(/\.exe$/i, "");
+    if (WRAP.test(word)) { s = rest.trim().replace(/^(?:(?:-[ugnCpk]\s+\S+|-\S+|\d+(?:\.\d+)?[smhd]?)(?:\s+|$))*/, ""); continue; }
+    if (/^(?:ba|z|da|k|a)?sh$/.test(word)) { const c = rest.match(/^\s+(?:-\w+\s+)*?-\w*c\w*\s+('[^']*'|"(?:[^"\\]|\\.)*"|\S+)/); if (c) return { inner: dq(c[1]) }; }
+    if (word === "eval") return { inner: dq(rest) };
+    return { seg: word + rest, bare: word + unquote(rest), word, dynamic: /[$`]/.test(tok) };
+  }
+  return null;
+}
 const SAFE_RM = /^(?:\.?\/)?(?:node_modules|dist|build|out|\.next|\.astro|\.turbo|\.cache|coverage|tmp|temp|\.wrangler\/tmp)(?:\/|$)|^\/tmp\/|\$TMPDIR|%TEMP%/;
 const SQL_TOOL = /^(?:psql|mysql|sqlite3|mariadb|duckdb|cockroach|(?:npx\s+)?wrangler\s+d1\s+execute|supabase\s+db|prisma\s+db\s+execute)\b/;
 
@@ -28,9 +48,15 @@ export function danger(cmd) {
   // Download piped straight into a shell: checked on the whole line, since segments() splits at the pipe.
   if (/\b(?:curl|wget|iwr|irm|Invoke-WebRequest|Invoke-RestMethod)\b[^;&\n]*\|\s*(?:sudo\s+)?(?:(?:ba|z|da|k)?sh|iex|Invoke-Expression|python3?|node)\b/i.test(unquote(String(cmd || ""))))
     add("pipe-run", "Downloads a script and runs it straight away, without anyone seeing what it does.", "Download it to a file, read it, then run it.");
-  for (const raw of segments(String(cmd || ""))) {
-    const seg = raw.replace(/^(?:sudo|env\s+\S+=\S+|time|nohup)\s+/g, "").trim(), bare = unquote(seg);
-    const word = bare.split(/\s+/)[0];
+  const queue = segments(String(cmd || "")).map((s) => [s, 0]);
+  for (let qi = 0; qi < queue.length; qi++) {
+    const [raw, depth] = queue[qi], n = norm(raw);
+    if (!n) continue;
+    if (n.inner != null) { if (depth < 3) queue.push(...segments(n.inner).map((s) => [s, depth + 1])); continue; }
+    const { seg, bare, word } = n;
+    // A program name we can't read (a variable or $(...)) with delete-style flags: ask rather than guess it's fine.
+    if (n.dynamic && /\s(?:-\w*[rRf]\w*|--force|--recursive|-delete)\b/.test(bare)) add("unclear", "Runs a command whose name comes from a variable, with delete-style flags, so it can't be checked.", "Write the command out in full.");
+    if (word === "find" && /\s-delete\b|\s-exec(?:dir)?\s+(?:\S*\/)?rm\b/.test(bare)) add("rm", "Deletes every file the search matches, for good.", "Run the find without -delete first to see what it matches.");
     if (word === "rm" && /\s-\w*[rR]/.test(bare)) {
       const targets = bare.split(/\s+/).slice(1).filter((t) => !t.startsWith("-"));
       if (!targets.length || targets.some((t) => !SAFE_RM.test(t))) add("rm", `Deletes ${targets.join(" ") || "files"} for good, with everything inside.`, "Delete specific files, or move them aside first so you can undo.");
