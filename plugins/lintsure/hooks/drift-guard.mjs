@@ -97,7 +97,7 @@ function checks(phase, inp, data, root, abs, rel, text, whole) {
       // write one); an invalid one still matches as plain text; one that ran out of time is said, never taken as "fine".
       const safe = safePattern(r.pattern);
       if (safe.error && /repeats|longer than/.test(safe.error)) continue;
-      if (data.slow?.has(r.id)) { found.push({ kind: "rule", ruleId: r.id, line: 0, rule: r.text, detail: "This rule's pattern took too long to check, so it was skipped. Simplify its pattern in .lintsure/rules.yml.", public: "A rule's pattern took too long and was skipped." }); continue; }
+      if (data.slow?.has(r.id)) { found.push({ kind: "rule", ruleId: r.id, line: 0, rule: r.text, inconclusive: true, detail: "This rule's pattern took too long to check, so this edit was not checked against it (inconclusive, not a pass and not a catch). Simplify its pattern in .lintsure/rules.yml.", public: "A rule's pattern took too long and was skipped." }); continue; }
       const hit = safe.re ? data.hitOf?.(text, r.id) ?? null : text.includes(r.pattern) ? [r.pattern] : null;
       if (hit) found.push({ kind: "rule", ruleId: r.id, line: lineOf(whole, hit[0]), rule: r.text, detail: `Added "${hit[0].slice(0, 80)}", which this rule forbids.`, public: "Added code this rule forbids." });
     }
@@ -197,7 +197,7 @@ async function main() {
   const inFile = phase === "pre" || !Object.keys(s.raised).some((k) => k.startsWith(`${rel}|`)) ? now
     : new Set(checks(phase, inp, data, root, abs, rel, whole, whole).map(sig));
   const back = phase === "pre" ? [] : Object.entries(s.raised).filter(([k]) => k.startsWith(`${rel}|`) && !now.has(k) && !inFile.has(k)).map(([k, id]) => { delete s.raised[k]; return id; }).filter(Boolean);
-  const fresh = found.filter((f) => !(sig(f) in s.raised));
+  let fresh = found.filter((f) => !(sig(f) in s.raised));
   if (!fresh.length) { if (back.length) await report({ events: [], returned: back }); save(); quiet(); }
 
   const outcome = phase === "pre" ? "refused" : s.override ? "overridden" : "caught";
@@ -206,13 +206,20 @@ async function main() {
   if (phase === "post") fresh.forEach((f, i) => (s.raised[sig(f)] = ids[i] || ""));
   save();
   if (mode === "quiet") quiet();
+  // Inconclusive results (a rule that couldn't finish) are said, never used to refuse or block an edit.
+  const unsure = fresh.filter((f) => f.inconclusive), sure = fresh.filter((f) => !f.inconclusive);
+  const unsureNote = unsure.length ? `Lintsure Drift Guard could not finish ${unsure.length} rule${unsure.length > 1 ? "s" : ""}: ${unsure.map((f) => `"${f.rule}"`).join(", ")}. Not checked, so neither a pass nor a catch. Simplify the pattern in .lintsure/rules.yml.` : "";
+  if (!sure.length) say({ hookSpecificOutput: { hookEventName: phase === "pre" ? "PreToolUse" : "PostToolUse", additionalContext: unsureNote } });
+  fresh = sure;
   const lines = fresh.slice(0, 5).map((f) => `- ${rel}${f.line ? `:${f.line}` : ""}: ${f.detail}${f.rule ? ` Rule: "${f.rule}"` : ""}`).join("\n");
   // Rules, protected files and new packages are the user's call; everything else is a slip the agent fixes itself.
   const ask = s.override ? "" : decision(fresh);
   if (phase === "pre") say({ hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: `Lintsure Drift Guard refused this edit:\n${lines}\n${ask || "Change the edit so it keeps to the rule."}` } });
-  if (mode === "strict") say({ decision: "block", reason: `Lintsure Drift Guard: this edit drifts from the project.\n${lines}\n${fresh.some((f) => f.kind === "made_up") ? "If you're creating that file or function in this task, carry on. " : ""}${ask || MSG_TAIL.strict}` });
+  if (mode === "strict") say({ decision: "block", reason: `Lintsure Drift Guard: this edit drifts from the project.\n${lines}\n${fresh.some((f) => f.kind === "made_up") ? "If you're creating that file or function in this task, carry on. " : ""}${ask || MSG_TAIL.strict}${unsureNote ? `
+${unsureNote}` : ""}` });
   // An agent often imports first and creates the file or function next: don't push it to undo that.
   const later = fresh.some((f) => f.kind === "made_up") ? "\nIf you're creating that file or function in this task, carry on. Otherwise use what exists." : "";
-  say({ hookSpecificOutput: { hookEventName: "PostToolUse", additionalContext: `Lintsure Drift Guard noticed:\n${lines}${later}\n${ask || MSG_TAIL.guide}` } });
+  say({ hookSpecificOutput: { hookEventName: "PostToolUse", additionalContext: `Lintsure Drift Guard noticed:\n${lines}${later}\n${ask || MSG_TAIL.guide}${unsureNote ? `
+${unsureNote}` : ""}` } });
 }
 main().catch(quiet);

@@ -660,3 +660,12 @@ test("a rule with when: stays out of Memory and is shown once when a matching fi
   assert.doesNotMatch(pre("src/payments/refund.ts"), /integer cents/, "shown once per session");
   done();
 });
+
+test("strict: a rule that can't finish is reported as inconclusive and never blocks the edit", () => {
+  const f = fixture("mode: strict\nrules:\n  - avoid: \"a*a*a*a*a*a*a*a*a*q\"\n    say: \"No slow things.\"\n");
+  // Strict mode checks rules before the edit: an unfinished rule must not refuse it.
+  const r = hook(f.root, "PreToolUse", "src/slow.ts", `const s = "${"a".repeat(1990)}";\n`);
+  assert.equal(r.deny, false);
+  assert.match(r.said, /could not finish 1 rule.*neither a pass nor a catch/);
+  f.done();
+});
