@@ -49,7 +49,7 @@ export function missingExports(abs, text, whole) {
     for (const [name, local] of wanted) {
       if (ex.has(name)) continue;
       const have = [...ex].filter((x) => x !== "default").slice(0, 8);
-      out.push({ kind: "made_up", line: lineOf(whole, m[0]), detail: name === "default" ? `Imports ${local} as the default from "${spec}", but that file has no default export.` : `Imports ${name} from "${spec}", but that file doesn't export it.${have.length ? ` It exports: ${have.join(", ")}.` : ""}` });
+      out.push({ kind: "made_up", line: lineOf(whole, m[0]), detail: name === "default" ? `Imports ${local} as the default from "${spec}", but no default export was found in that file.` : `Imports ${name} from "${spec}", but no export by that name was found in that file (a re-export Lintsure can't follow would also look like this).${have.length ? ` It exports: ${have.join(", ")}.` : ""}` });
     }
   }
   return out;
