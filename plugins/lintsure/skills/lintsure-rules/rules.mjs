@@ -107,16 +107,17 @@ async function tryRule(r) {
   if (r.kind === "avoid") {
     const safe = safePattern(r.pattern, "i");
     if (safe.error) return { ok: false, says: safe.error };
-    const list = [];
+    const list = []; let tooBig = 0;
     for (const f of all) {
       const p = rel(f);
       if (!/\.(m?[jt]sx?|cjs|astro|vue|svelte|py|rb|go|java|kt|php|html|ya?ml|json|toml|env|sh|sql|md)$|(^|\/)\.env/.test(p) || !inScope(p) || out(p)) continue;
-      try { if (statSync(f).size > 300_000) continue; list.push({ p, text: readFileSync(f, "utf8") }); } catch { /* skip */ }
+      try { if (statSync(f).size > 300_000) { tooBig++; continue; } list.push({ p, text: readFileSync(f, "utf8") }); } catch { tooBig++; }
     }
     const { hits, scanned, partial } = await scanInWorker(r.pattern, list);
+    const notRead = tooBig ? ` ${tooBig} file${tooBig > 1 ? "s were" : " was"} not read (over 300 KB or unreadable), so no match there means not checked.` : "";
     const more = partial ? ` It stopped after 3 seconds (${scanned} of ${list.length} files read), so there may be more. If that's on a small repo, the pattern is too slow: simplify it.` : "";
-    return { ok: true, kind: "avoid", scanned, partial, hits: hits.length, sample: hits.slice(0, 12),
-      says: (hits.length ? `Matches ${hits.length} line${hits.length > 1 ? "s" : ""} in ${scanned} files already. The guard checks new edits, so these won't be flagged, but if this list is long the pattern is probably too broad.` : `Matches nothing in the ${scanned} files it covers today. New code that matches will be flagged.`) + more };
+    return { ok: true, kind: "avoid", scanned, notRead: tooBig, partial, hits: hits.length, sample: hits.slice(0, 12),
+      says: (hits.length ? `Matches ${hits.length} line${hits.length > 1 ? "s" : ""} in ${scanned} files already. The guard checks new edits, so these won't be flagged, but if this list is long the pattern is probably too broad.` : `Matches nothing in the ${scanned} files it covers today. New code that matches will be flagged.`) + more + notRead };
   }
   if (r.kind === "protect") {
     const hit = all.map(rel).filter(inScope).filter((p) => !out(p));
