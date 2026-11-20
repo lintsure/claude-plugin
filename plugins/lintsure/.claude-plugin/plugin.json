@@ -1,6 +1,6 @@
 {
   "name": "lintsure",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Keep your AI coding agent on track and in context: Drift Guard holds it to your project rules, Danger Guard asks before risky commands, Loop Guard notices when it repeats itself, Threat Guard stops known AI attack tooling, and a local scan checks the code it wrote. Runs on your machine and sends nothing unless you add a Lintsure API key. Not an audit or legal advice.",
   "author": {
     "name": "Lintsure",
