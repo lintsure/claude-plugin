@@ -10,7 +10,7 @@ import { readFileSync, existsSync, statSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { join, dirname, relative, basename, resolve } from "node:path";
 import { builtinModules } from "node:module";
-import { quiet, say, input, off, state, rules, report, globMatch, excepted } from "./lib.mjs";
+import { quiet, say, input, off, state, rules, report, globMatch, excepted, safePattern, matchLines } from "./lib.mjs";
 import { profileChecks, profile } from "./profile.mjs";
 import { resolveFile, missingExports, duplicateFunctions, bandAids, testGuard, packageGuard, scopeGuard, secretGuard, privacyGuard } from "./code.mjs";
 
@@ -93,8 +93,10 @@ function checks(phase, inp, data, root, abs, rel, text, whole) {
     if (r.except && globMatch(rel, r.except)) continue; // a one-off exception the user agreed to
     if (ruleChecks && r.kind === "protect" && existed && globMatch(rel, r.paths)) found.push({ kind: "protected", ruleId: r.id, line: 0, rule: r.text, detail: `Edited ${rel}, which is protected.` });
     if (ruleChecks && r.kind === "avoid" && r.pattern && (!r.paths || globMatch(rel, r.paths))) {
-      let re; try { re = new RegExp(r.pattern, "m"); } catch { re = null; }
-      const hit = re ? text.match(re) : text.includes(r.pattern) ? [r.pattern] : null;
+      // An unsafe or invalid pattern is skipped (rules.mjs refuses to write one); an invalid one still matches as plain text.
+      const safe = safePattern(r.pattern);
+      if (safe.error && /repeats|longer than/.test(safe.error)) continue;
+      const hit = safe.re ? matchLines(safe.re, text) : text.includes(r.pattern) ? [r.pattern] : null;
       if (hit) found.push({ kind: "rule", ruleId: r.id, line: lineOf(whole, hit[0]), rule: r.text, detail: `Added "${hit[0].slice(0, 80)}", which this rule forbids.`, public: "Added code this rule forbids." });
     }
     if (phase === "post" && r.kind === "deps") for (const [n] of newDeps(abs, root, text, replaced(inp.tool_name, inp.tool_input || {}, root, rel, data.before))) found.push({ kind: "deps", ruleId: r.id, line: lineOf(whole, `"${n}"`), rule: r.text, detail: `Added the package "${n}".` });
