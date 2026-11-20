@@ -12,7 +12,7 @@
 // Suggestions are guesses from files that exist, never claims about what the code does. The user decides.
 import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, statSync } from "node:fs";
 import { join, relative, basename } from "node:path";
-import { fileRules, globMatch } from "../../hooks/lib.mjs";
+import { fileRules, globMatch, safePattern, MAX_LINE } from "../../hooks/lib.mjs";
 import { profile } from "../../hooks/profile.mjs";
 import { sync, synced, unsync } from "./agents.mjs";
 
@@ -85,17 +85,21 @@ function suggest() {
 function tryRule(r) {
   const all = files(), inScope = (p) => (!r.in && !r.paths) || globMatch(p, r.kind === "protect" ? r.paths : r.in), out = (p) => !!r.except && globMatch(p, r.except);
   if (r.kind === "avoid") {
-    let re; try { re = new RegExp(r.pattern, "i"); } catch (e) { return { ok: false, says: `The pattern isn't a valid regular expression: ${e.message}` }; }
-    const hits = []; let scanned = 0;
+    const safe = safePattern(r.pattern, "i");
+    if (safe.error) return { ok: false, says: safe.error };
+    // A time budget on top of the safe-pattern check: a big repo stops after 3 seconds and says the count is partial.
+    const hits = [], until = Date.now() + 3000; let scanned = 0, partial = false;
     for (const f of all) {
+      if (Date.now() > until) { partial = true; break; }
       const p = rel(f);
       if (!/\.(m?[jt]sx?|cjs|astro|vue|svelte|py|rb|go|java|kt|php|html|ya?ml|json|toml|env|sh|sql|md)$|(^|\/)\.env/.test(p) || !inScope(p) || out(p)) continue;
       let text; try { if (statSync(f).size > 300_000) continue; text = readFileSync(f, "utf8"); } catch { continue; }
       scanned++;
-      text.split("\n").forEach((line, i) => { const m = line.match(re); if (m) hits.push({ at: `${p}:${i + 1}`, match: m[0].length > 12 ? m[0].slice(0, 6) + "…" : m[0] }); });
+      text.split("\n").forEach((line, i) => { const m = line.slice(0, MAX_LINE).match(safe.re); if (m) hits.push({ at: `${p}:${i + 1}`, match: m[0].length > 12 ? m[0].slice(0, 6) + "…" : m[0] }); });
     }
-    return { ok: true, kind: "avoid", scanned, hits: hits.length, sample: hits.slice(0, 12),
-      says: hits.length ? `Matches ${hits.length} line${hits.length > 1 ? "s" : ""} in ${scanned} files already. The guard checks new edits, so these won't be flagged, but if this list is long the pattern is probably too broad.` : `Matches nothing in the ${scanned} files it covers today. New code that matches will be flagged.` };
+    const more = partial ? ` It stopped after 3 seconds, so there may be more.` : "";
+    return { ok: true, kind: "avoid", scanned, partial, hits: hits.length, sample: hits.slice(0, 12),
+      says: (hits.length ? `Matches ${hits.length} line${hits.length > 1 ? "s" : ""} in ${scanned} files already. The guard checks new edits, so these won't be flagged, but if this list is long the pattern is probably too broad.` : `Matches nothing in the ${scanned} files it covers today. New code that matches will be flagged.`) + more };
   }
   if (r.kind === "protect") {
     const hit = all.map(rel).filter(inScope).filter((p) => !out(p));
@@ -118,7 +122,7 @@ function item(r) {
 }
 function write(list) {
   const ok = list.filter((r) => ["avoid", "protect", "deps", "note"].includes(r.kind) && r.text && (r.kind !== "avoid" || r.pattern) && (r.kind !== "protect" || r.paths));
-  for (const r of ok) if (r.kind === "avoid") { try { new RegExp(r.pattern); } catch { console.log(`Skipped "${r.text}": the pattern isn't valid.`); r.skip = true; } }
+  for (const r of ok) if (r.kind === "avoid") { const s = safePattern(r.pattern); if (s.error) { console.log(`Skipped "${r.text}": ${s.error}`); r.skip = true; } }
   const add = ok.filter((r) => !r.skip);
   if (!add.length) { console.log("Nothing to add."); return; }
   const before = fileRules(root).length;

@@ -401,6 +401,21 @@ test("Rules try: dry-runs a rule on the repo, from a file, and keeps except: thr
   assert.match(readFileSync(join(f.root, ".lintsure/rules.yml"), "utf8"), /except: "src\/server\/\*\*"/);
   f.done();
 });
+test("Rule patterns: nested repeats and huge patterns are refused, lines are cut, and nothing hangs", async () => {
+  const { safePattern, matchLines, globMatch } = await import(pathToFileURL(join(HOOKS, "lib.mjs")).href);
+  for (const p of ["(a+)+$", "(\\w*)*x", "(a|b+)*c", "(a|aa)*b", "([a-z]+)+@", "(x+){2,}"]) assert.match(safePattern(p).error ?? "", /repeats/, p);
+  assert.match(safePattern("a".repeat(501)).error, /longer than/);
+  assert.match(safePattern("(unclosed").error, /isn't a valid/);
+  for (const p of ["console\\.log\\(", "\\.(skip|only)\\(", "(sk|rk)_live_[0-9a-zA-Z]{10,}", "(?:api[_-]?key)\\s*[:=]", "[ab]+c"]) assert.ok(safePattern(p).re, p);
+  assert.equal(matchLines(/b$/, "a".repeat(5000) + "b"), null, "only the first 2,000 characters of a line are read");
+  assert.ok(matchLines(/b/, "x\nab"), "every line is read");
+  assert.ok(globMatch("a/b/c/d.ts", "**/**/**/*.ts"), "stacked ** still matches");
+  const f = fixture("mode: guide\nrules:\n  - avoid: \"(a+)+$\"\n    say: \"no\"\n");
+  const run = (...a) => { try { return execFileSync("node", [RULES, ...a], { cwd: f.root, env, encoding: "utf8" }); } catch (e) { return String(e.stdout); } };
+  assert.match(run("try", JSON.stringify({ kind: "avoid", text: "x", pattern: "(a+)+$" })), /repeats a group/);
+  assert.match(run("write", JSON.stringify([{ kind: "avoid", text: "x", pattern: "(a+)+$" }])), /Skipped "x": The pattern repeats/);
+  f.done();
+});
 test("Danger Guard hook answers with the user's permission prompt and a safer option", () => {
   const out = execFileSync("node", [join(HOOKS, "danger.mjs")], { input: JSON.stringify({ tool_name: "Bash", cwd: tmpdir(), tool_input: { command: "git reset --hard" } }), env, encoding: "utf8" });
   const o = JSON.parse(out).hookSpecificOutput;
