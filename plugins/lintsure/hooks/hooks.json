@@ -1,5 +1,5 @@
 {
-  "description": "Lintsure: Drift Guard checks each edit against your rules and the code that exists, memory comes back after compaction, Threat Guard stops known AI attack tooling, and one quiet scan runs at the end of each task.",
+  "description": "Lintsure: Drift Guard checks each edit against your rules and the code that exists, memory comes back after compaction, Loop Guard notices an agent repeating itself, Threat Guard stops known AI attack tooling, and one quiet scan runs at the end of each task.",
   "hooks": {
     "PreToolUse": [
       {
@@ -34,6 +34,15 @@
       }
     ],
     "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/loop.mjs\"",
+            "timeout": 5
+          }
+        ]
+      },
       {
         "matcher": "Edit|Write|MultiEdit",
         "hooks": [

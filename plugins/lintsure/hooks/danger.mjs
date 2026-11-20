@@ -82,6 +82,9 @@ export function danger(cmd) {
       if (/\bDELETE\s+FROM\s+\w+(?![^;]*\bWHERE\b)/i.test(seg)) add("sql-delete", "Deletes every row in a table (no WHERE).", "Add a WHERE clause, or back the table up first.");
     }
     if (/\bwrangler\s+d1\s+delete\b|\bdocker\s+system\s+prune\b|\bkubectl\s+delete\s+(?:ns|namespace)\b|\bterraform\s+destroy\b|\baws\s+s3\s+rb\b.*--force/.test(bare)) add("infra", "Deletes infrastructure or data that can't be brought back.", "Check with the user first and make a backup.");
+    // A container given the host: privileged, the host's Docker socket, or the host's root folder.
+    if (/^(?:docker|podman|nerdctl)$/i.test(word) && /\s(?:run|create)\b/.test(bare) && (/\s--privileged\b/.test(bare) || /(?<!unix:\/)\/var\/run\/docker\.sock|\/\/\.\/pipe\/docker_engine/.test(seg) || /\s(?:-v|--volume|--mount)[\s=](?:type=bind,\s*source=)?\/:\//.test(seg)))
+      add("docker-host", "Starts a container with control of this machine (privileged, the Docker socket, or the whole disk mounted).", "Run it without --privileged and without mounting /var/run/docker.sock or /; mount only the folder it needs.");
     // Secrets leaving their file: shown to the agent (and its transcript), or sent somewhere.
     if (/^(?:cat|type|more|less|head|tail|bat|nl|Get-Content|gc|grep|egrep|rg|findstr|Select-String|sls|awk|sed|cut|strings|xxd|od|base64|cp|copy|Copy-Item|scp)$/i.test(word) && SECRET_FILE.test(/^(?:cp|copy|Copy-Item|scp)$/i.test(word) ? seg.replace(/\s+\S+\s*$/, "") : seg))
       add("secrets-out", "Shows or copies a file that holds secrets, so its keys end up in the conversation or somewhere new.", "Check only the key names (for example cut -d= -f1 .env), or ask the user for the one value you need.");
