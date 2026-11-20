@@ -10,7 +10,7 @@ import { readFileSync, existsSync, statSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { join, dirname, relative, basename, resolve } from "node:path";
 import { builtinModules } from "node:module";
-import { quiet, say, input, off, state, rules, report, globMatch, excepted, safePattern, matchLines } from "./lib.mjs";
+import { quiet, say, input, off, state, rules, report, globMatch, excepted, safePattern, matchRules } from "./lib.mjs";
 import { profileChecks, profile } from "./profile.mjs";
 import { resolveFile, missingExports, duplicateFunctions, bandAids, testGuard, packageGuard, scopeGuard, secretGuard, privacyGuard } from "./code.mjs";
 
@@ -93,10 +93,12 @@ function checks(phase, inp, data, root, abs, rel, text, whole) {
     if (r.except && globMatch(rel, r.except)) continue; // a one-off exception the user agreed to
     if (ruleChecks && r.kind === "protect" && existed && globMatch(rel, r.paths)) found.push({ kind: "protected", ruleId: r.id, line: 0, rule: r.text, detail: `Edited ${rel}, which is protected.` });
     if (ruleChecks && r.kind === "avoid" && r.pattern && (!r.paths || globMatch(rel, r.paths))) {
-      // An unsafe or invalid pattern is skipped (rules.mjs refuses to write one); an invalid one still matches as plain text.
+      // Valid, safe patterns ran in a worker with a time limit (main, below). Unsafe ones are skipped (rules.mjs refuses to
+      // write one); an invalid one still matches as plain text; one that ran out of time is said, never taken as "fine".
       const safe = safePattern(r.pattern);
       if (safe.error && /repeats|longer than/.test(safe.error)) continue;
-      const hit = safe.re ? matchLines(safe.re, text) : text.includes(r.pattern) ? [r.pattern] : null;
+      if (data.slow?.has(r.id)) { found.push({ kind: "rule", ruleId: r.id, line: 0, rule: r.text, detail: "This rule's pattern took too long to check, so it was skipped. Simplify its pattern in .lintsure/rules.yml.", public: "A rule's pattern took too long and was skipped." }); continue; }
+      const hit = safe.re ? data.hitOf?.(text, r.id) ?? null : text.includes(r.pattern) ? [r.pattern] : null;
       if (hit) found.push({ kind: "rule", ruleId: r.id, line: lineOf(whole, hit[0]), rule: r.text, detail: `Added "${hit[0].slice(0, 80)}", which this rule forbids.`, public: "Added code this rule forbids." });
     }
     if (phase === "post" && r.kind === "deps") for (const [n] of newDeps(abs, root, text, replaced(inp.tool_name, inp.tool_input || {}, root, rel, data.before))) found.push({ kind: "deps", ruleId: r.id, line: lineOf(whole, `"${n}"`), rule: r.text, detail: `Added the package "${n}".` });
@@ -167,6 +169,11 @@ async function main() {
   }
   if (phase === "post" && inp.tool_name === "Write") { const st = state(inp.session_id); data.before = st.s.before?.[rel]; if (st.s.before) { delete st.s.before; st.save(); } }
   if (phase === "pre" && mode === "quiet") quiet();
+  // Rule patterns run off the main thread with a hard time limit, on both the added text and the whole file.
+  const runnable = (data.rules || []).filter((r) => r.kind === "avoid" && r.pattern && safePattern(r.pattern).re).map((r) => ({ id: r.id, pattern: r.pattern }));
+  const { hits, slow } = await matchRules(runnable, [text, whole]);
+  data.hitOf = (t, id) => { const h = hits.get(`${t === text ? 0 : 1}:${id}`); return h == null ? null : [h]; };
+  data.slow = new Set(slow);
   const found = checks(phase, inp, data, root, abs, rel, text, whole);
   if (phase === "post" && basename(abs) === "package.json") {
     const added = newDeps(abs, root, text, replaced(inp.tool_name, inp.tool_input || {}, root, rel, data.before));
