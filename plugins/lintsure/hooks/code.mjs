@@ -198,7 +198,7 @@ export async function packageGuard(added, installed, whole, online = !["offline"
     const twin = lookalike(name, [...new Set([...POPULAR, ...installed])]);
     if (twin) out.push({ kind: "package", line: at(name), detail: `Adds "${name}", one letter off the well-known "${twin}". Lookalike names are a common trick. Check it's the package you meant.` });
     if (!online || !/^(@[\w.-]+\/)?[\w.-]+$/.test(name)) return out;
-    const meta = await getJson(`https://registry.npmjs.org/${name.replace("/", "%2F")}`);
+    const meta = await getJson(`https://registry.npmjs.org/${name.replaceAll("/", "%2F")}`);
     if (meta?.missing) { out.push({ kind: "package", line: at(name), detail: `Adds "${name}", which doesn't exist on npm. It may be made up; someone could register that name later.` }); return out; }
     if (!meta) return out;
     const created = Date.parse(meta.time?.created || ""), latest = meta["dist-tags"]?.latest, v = meta.versions?.[latest] || {};

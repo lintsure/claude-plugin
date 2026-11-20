@@ -6,6 +6,7 @@
 //   node scripts/replay.mjs [cases-dir]      default: test/replay
 // Record new cases with LINTSURE_RECORD=1 (they land in .lintsure/replay/inbox.jsonl), label them, move them here.
 // Cases may carry "files": { "path": "content" } to build the small repo a guard needs; it's created in a temp folder.
+import { randomUUID } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { mkdtempSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -37,7 +38,7 @@ function runCase(c) {
     const input = JSON.parse(JSON.stringify(c.input));
     if (input.tool_input?.file_path) input.tool_input.file_path = join(root, input.tool_input.file_path);
     let out = "";
-    try { out = execFileSync(process.execPath, [join(HOOKS, c.hook)], { input: JSON.stringify({ session_id: `replay-${process.pid}-${Math.random().toString(36).slice(2)}`, cwd: root, ...input }), env, encoding: "utf8", timeout: 20000 }); }
+    try { out = execFileSync(process.execPath, [join(HOOKS, c.hook)], { input: JSON.stringify({ session_id: `replay-${process.pid}-${randomUUID()}`, cwd: root, ...input }), env, encoding: "utf8", timeout: 20000 }); }
     catch (e) { out = String(e.stdout || ""); if (e.status === 2) return "catch"; if (!out) return "error"; }
     return caught(out) ? "catch" : "pass";
   } finally { rmSync(root, { recursive: true, force: true }); }

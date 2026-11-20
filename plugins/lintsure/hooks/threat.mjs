@@ -39,7 +39,7 @@ const DOMAINS = [{ re: /\bxcai\.pro\b/i, what: "xcai.pro, the LLM API reseller u
 export function threats(text) {
   const t = String(text || ""), out = [];
   for (const x of [...FRAMEWORK, ...TOOLS, ...DOMAINS]) if (x.re.test(t)) out.push({ id: x.re.source, why: `Mentions ${x.what}.`, src: x.src });
-  for (const ip of IPS) if (new RegExp(`(?<![\\d.])${ip.replace(/\./g, "\\.")}(?![\\d.])`).test(t)) out.push({ id: ip, why: `Contacts ${ip}, an address the advisory lists as ARTEX attack infrastructure.`, src: FBI });
+  for (const ip of IPS) if (new RegExp(`(?<![\\d.])${ip.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![\\d.])`).test(t)) out.push({ id: ip, why: `Contacts ${ip}, an address the advisory lists as ARTEX attack infrastructure.`, src: FBI });
   return out;
 }
 
