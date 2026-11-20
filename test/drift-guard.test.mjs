@@ -383,6 +383,24 @@ test("Loop Guard: tells the agent once after 5 identical calls, and edits reset 
   for (let i = 0; i < 4; i++) loopCheck(r, "Read", { file_path: "/p/src/app.ts" });
   assert.match(loopCheck(r, "Read", { file_path: "/p/src/app.ts" }), /read app\.ts 5 times/);
 });
+test("Rules try: dry-runs a rule on the repo, from a file, and keeps except: through write", () => {
+  const f = fixture(NO_RULES);
+  const run = (...a) => execFileSync("node", [RULES, ...a], { cwd: f.root, env, encoding: "utf8" });
+  const rule = { kind: "avoid", text: "Use the logger, not console.log.", pattern: String.raw`\bconsole\.log\(`, in: "src/**", except: "src/server/**" };
+  writeFileSync(join(f.root, "rule.json"), JSON.stringify(rule));
+  writeFileSync(join(f.root, "src/components/Bad.ts"), "console.log('hi');\n");
+  writeFileSync(join(f.root, "src/server/ok.ts"), "console.log('server');\n");
+  const t = JSON.parse(run("try", "@rule.json").split("JSON: ")[1]);
+  assert.equal(t.hits, 1, "matches the component, not the excepted server file");
+  assert.match(t.sample[0].at, /src\/components\/Bad\.ts:1/);
+  const p = JSON.parse(run("try", JSON.stringify({ kind: "protect", text: "x", paths: "migrations/**" })).split("JSON: ")[1]);
+  assert.equal(p.files, 1);
+  let mangled = ""; try { run("try", JSON.stringify({ kind: "avoid", text: "x", pattern: "a\bb" })); } catch (e) { mangled = String(e.stdout); }
+  assert.match(mangled, /ate its backslashes/, "refused with exit 1 and the reason");
+  run("write", "@rule.json");
+  assert.match(readFileSync(join(f.root, ".lintsure/rules.yml"), "utf8"), /except: "src\/server\/\*\*"/);
+  f.done();
+});
 test("Danger Guard hook answers with the user's permission prompt and a safer option", () => {
   const out = execFileSync("node", [join(HOOKS, "danger.mjs")], { input: JSON.stringify({ tool_name: "Bash", cwd: tmpdir(), tool_input: { command: "git reset --hard" } }), env, encoding: "utf8" });
   const o = JSON.parse(out).hookSpecificOutput;

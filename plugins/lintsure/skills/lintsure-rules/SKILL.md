@@ -17,14 +17,18 @@ Rules live in `.lintsure/rules.yml` in the repo, so every agent and every sessio
 
 ## The user states a rule in normal words
 
-For example "Lintsure: never let it touch the payment code" or "always use our logger".
+For example "Lintsure: never let it touch the payment code", "always use our logger", or a rule pasted from the Lintsure dashboard ("Lintsure: make this a rule: …"). The dashboard only knows common phrases; you can read this repo, so you compile the rest.
 
 1. Turn it into one rule. Pick the kind:
    - `protect` with `paths` when it's about files or folders not being changed.
-   - `avoid` with a `pattern` (a regular expression) and optional `in` (files) when it's about code that must not be added.
+   - `avoid` with a `pattern` (a regular expression) and optional `in` (files) when it's about code that must not be added. Use `except` for files inside `in` that are fine, for example API routes when the rule is about code that ships to the browser.
    - `deps` for "ask before adding packages".
    - `note` when it can't be checked from the code ("keep the checkout simple"). Say honestly that this one is a reminder Lintsure can't check. If it's about certain files only ("amounts in src/payments are cents"), add `when` with those files: it's then shown only when the agent edits them, which keeps Memory short.
-2. Tell the user in one plain sentence what will be caught, for example "I'll flag any change to files in src/payments/." Then write it with `rules.mjs write`.
+   Use this repo's real folders for `in`, `paths` and `except` (look at it first), not generic guesses. Globs are comma separated: `"src/components/**, app/**/*.tsx"`.
+2. Try it before writing. Save the rule as JSON to a temporary file and run `rules.mjs try @<that file>` (a file, because some shells drop the backslashes in a pattern passed inline). It says what the rule matches in the repo today.
+   - `avoid`: lines that already match. A few, and they're real problems or examples, is fine. Dozens means the pattern is too broad: tighten the pattern or the files and try again. If it should match something and matches nothing, check the files are right.
+   - `protect`: how many existing files it covers. None means the paths are wrong.
+3. Tell the user in one plain sentence what will be caught, with the try result, for example "I'll flag API keys in src/components and app pages, not API routes. Today it matches 2 lines, both example keys in docs." Write it with `rules.mjs write @<file>` only after they agree. Never write a rule the user didn't agree to.
 
 ## Show the rules
 
