@@ -39,6 +39,10 @@ export function norm(raw) {
   }
   return null;
 }
+// Files that hold secrets: .env files (not the shared .example/.sample/.template), SSH and TLS keys, cloud and npm credentials.
+const SECRET_FILE = /(?:^|[\s/\\'"=@])(?:\.env(?:\.(?!example|sample|template|dist)[\w-]+)?|\.dev\.vars|id_(?:rsa|ed25519|ecdsa)|[\w-]+\.(?:pem|key|p12|pfx)|\.aws[/\\]credentials|\.netrc|\.npmrc|\.pgpass|credentials\.json|service-account[\w-]*\.json)(?=$|[\s'"|;&)])/i;
+// A variable whose name says it holds a secret: $STRIPE_SECRET_KEY, ${API_TOKEN}, $env:OPENAI_API_KEY, os.environ["DB_PASSWORD"].
+const SECRET_VAR = /\$(?:env:)?\{?[A-Z0-9_]*(?:KEY|TOKEN|SECRET|PASSWORD|PASSWD|PASS|PWD|CREDENTIALS?|PRIVATE)[A-Z0-9_]*\}?/i;
 const SAFE_RM = /^(?:\.?\/)?(?:node_modules|dist|build|out|\.next|\.astro|\.turbo|\.cache|coverage|tmp|temp|\.wrangler\/tmp)(?:\/|$)|^\/tmp\/|\$TMPDIR|%TEMP%/;
 const SQL_TOOL = /^(?:psql|mysql|sqlite3|mariadb|duckdb|cockroach|(?:npx\s+)?wrangler\s+d1\s+execute|supabase\s+db|prisma\s+db\s+execute)\b/;
 
@@ -51,6 +55,8 @@ export function danger(cmd) {
   const queue = segments(String(cmd || "")).map((s) => [s, 0]);
   for (let qi = 0; qi < queue.length; qi++) {
     const [raw, depth] = queue[qi], n = norm(raw);
+    // Dumping every environment variable puts all the keys in the agent's context and transcript.
+    if (/^\s*(?:printenv|env|set)\s*$|^\s*(?:Get-ChildItem|gci|dir|ls)\s+env:\s*$/i.test(raw)) add("secrets-out", "Prints every environment variable, keys included, into the conversation.", "Print only the one variable you need, or check that it's set with [ -n \"$NAME\" ].");
     if (!n) continue;
     if (n.inner != null) { if (depth < 3) queue.push(...segments(n.inner).map((s) => [s, depth + 1])); continue; }
     const { seg, bare, word } = n;
@@ -76,6 +82,13 @@ export function danger(cmd) {
       if (/\bDELETE\s+FROM\s+\w+(?![^;]*\bWHERE\b)/i.test(seg)) add("sql-delete", "Deletes every row in a table (no WHERE).", "Add a WHERE clause, or back the table up first.");
     }
     if (/\bwrangler\s+d1\s+delete\b|\bdocker\s+system\s+prune\b|\bkubectl\s+delete\s+(?:ns|namespace)\b|\bterraform\s+destroy\b|\baws\s+s3\s+rb\b.*--force/.test(bare)) add("infra", "Deletes infrastructure or data that can't be brought back.", "Check with the user first and make a backup.");
+    // Secrets leaving their file: shown to the agent (and its transcript), or sent somewhere.
+    if (/^(?:cat|type|more|less|head|tail|bat|nl|Get-Content|gc|grep|egrep|rg|findstr|Select-String|sls|awk|sed|cut|strings|xxd|od|base64|cp|copy|Copy-Item|scp)$/i.test(word) && SECRET_FILE.test(/^(?:cp|copy|Copy-Item|scp)$/i.test(word) ? seg.replace(/\s+\S+\s*$/, "") : seg))
+      add("secrets-out", "Shows or copies a file that holds secrets, so its keys end up in the conversation or somewhere new.", "Check only the key names (for example cut -d= -f1 .env), or ask the user for the one value you need.");
+    if (/^(?:echo|printf|Write-Output|Write-Host|print|printenv)$/i.test(word) && (SECRET_VAR.test(seg) || (word === "printenv" && /\s[A-Z0-9_]*(?:KEY|TOKEN|SECRET|PASSWORD|PASS|PWD|CREDENTIALS?)\w*\b/i.test(seg))))
+      add("secrets-out", "Prints a secret value into the conversation.", "Check that it's set without printing it, for example [ -n \"$NAME\" ] && echo set.");
+    if (/^(?:curl|wget|http|https|iwr|irm|Invoke-WebRequest|Invoke-RestMethod|nc|ncat)$/i.test(word) && (/(?:@|--upload-file\s+|-T\s+|-InFile\s+)\S*(?:\.env\b(?!\.(?:example|sample|template))|id_rsa|\.pem\b|credentials\b|\.netrc\b)/i.test(seg) || SECRET_VAR.test(seg) && /\s(?:-d|--data\S*|-F|--form|-Body)\b/i.test(seg)))
+      add("secrets-out", "Sends secrets from this machine to a web address.", "Don't send keys anywhere; if a service needs one, ask the user to set it there.");
     if (/(?:^|\s)>\s*\.env(?:\.\w+)?(?:\s|$)/.test(bare) || (word === "rm" && /(?:^|\s)\.env\b/.test(bare))) add("env", "Wipes the .env file with its secrets.", "Back it up, or edit only the line you need.");
     // Attacker-style commands: no app needs these to build or test, so the user decides.
     const ps = /^(?:powershell|pwsh)(?:\.exe)?$/i.test(word);
