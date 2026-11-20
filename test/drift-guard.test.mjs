@@ -410,6 +410,16 @@ test("Rule patterns: nested repeats and huge patterns are refused, lines are cut
   assert.equal(matchLines(/b$/, "a".repeat(5000) + "b"), null, "only the first 2,000 characters of a line are read");
   assert.ok(matchLines(/b/, "x\nab"), "every line is read");
   assert.ok(globMatch("a/b/c/d.ts", "**/**/**/*.ts"), "stacked ** still matches");
+  // The hard limit: a slow pattern the shape check lets through is stopped by the worker, and reported as slow.
+  const { matchRules } = await import(pathToFileURL(join(HOOKS, "lib.mjs")).href);
+  const slowPattern = "a*a*a*a*a*a*a*c";
+  assert.ok(safePattern(slowPattern).re, "this one passes the shape check");
+  const t0 = Date.now();
+  const r = await matchRules([{ id: "slow", pattern: slowPattern }, { id: "quick", pattern: "zzz" }], ["a".repeat(2000)], 400);
+  assert.ok(Date.now() - t0 < 2000, "stopped close to its time limit");
+  assert.deepEqual(r.slow.includes("slow"), true);
+  const ok = await matchRules([{ id: "log", pattern: "console\\.log\\(" }], ["x\nconsole.log(1)", "nothing"]);
+  assert.deepEqual([ok.hits.get("0:log"), ok.hits.get("1:log"), ok.slow], ["console.log(", null, []]);
   const f = fixture("mode: guide\nrules:\n  - avoid: \"(a+)+$\"\n    say: \"no\"\n");
   const run = (...a) => { try { return execFileSync("node", [RULES, ...a], { cwd: f.root, env, encoding: "utf8" }); } catch (e) { return String(e.stdout); } };
   assert.match(run("try", JSON.stringify({ kind: "avoid", text: "x", pattern: "(a+)+$" })), /repeats a group/);

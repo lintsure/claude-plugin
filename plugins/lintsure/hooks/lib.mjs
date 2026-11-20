@@ -4,6 +4,7 @@ import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join, basename } from "node:path";
 import { createHash } from "node:crypto";
+import { Worker } from "node:worker_threads";
 
 export const API = (process.env.LINTSURE_URL || "https://lintsure.com").replace(/\/$/, "");
 export const KEY = process.env.LINTSURE_API_KEY || "";
@@ -192,6 +193,34 @@ export function safePattern(src, flags = "") {
   if (p.length > MAX_PATTERN) return { error: `The pattern is longer than ${MAX_PATTERN} characters.` };
   if (NESTED.test(p)) return { error: "The pattern repeats a group that repeats inside or offers choices, like (a+)+ or (a|b)*, which can take minutes on a single line. Write it without the repeated group, for example with a character class like [ab]+." };
   try { return { re: new RegExp(p, flags) }; } catch (e) { return { error: `The pattern isn't a valid regular expression: ${e.message}` }; }
+}
+// The hard limit: patterns run in a worker thread that is stopped when its time is up, so no pattern, however it is
+// written, can hold up an edit or a dry run. The shape check above rejects most bad patterns before this point.
+const WORKER = `
+const { parentPort, workerData: w } = require("node:worker_threads");
+for (const r of w.rules) {
+  const re = new RegExp(r.pattern, r.flags || "");
+  w.texts.forEach((text, i) => {
+    let hit = null;
+    for (const line of String(text).split("\\n")) { const m = line.slice(0, w.max).match(re); if (m) { hit = m[0]; break; } }
+    parentPort.postMessage({ key: i + ":" + r.id, hit });
+  });
+  parentPort.postMessage({ ruleDone: r.id });
+}
+parentPort.postMessage({ done: true });`;
+/** Runs each rule's pattern on each text in a worker, stopped after `ms`. Returns hits keyed "<text index>:<rule id>"
+ *  (the matched text, or null) and the ids of rules that didn't finish in time. Async; never throws. */
+export function matchRules(rules, texts, ms = 1000) {
+  return new Promise((resolve) => {
+    const hits = new Map(), finished = new Set(), slow = () => rules.map((r) => r.id).filter((id) => !finished.has(id));
+    if (!rules.length) return resolve({ hits, slow: [] });
+    let w, timer;
+    const end = () => { clearTimeout(timer); w?.terminate().catch(() => {}); resolve({ hits, slow: slow() }); };
+    try { w = new Worker(WORKER, { eval: true, workerData: { rules, texts, max: MAX_LINE } }); } catch { return resolve({ hits, slow: slow() }); }
+    timer = setTimeout(end, ms);
+    w.on("message", (m) => { if (m.done) end(); else if (m.ruleDone) finished.add(m.ruleDone); else hits.set(m.key, m.hit); });
+    w.on("error", end);
+  });
 }
 /** The first match of `re` in `text`, line by line, each line cut to MAX_LINE. Pure. */
 export function matchLines(re, text) {

@@ -13,6 +13,7 @@
 import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, statSync } from "node:fs";
 import { join, relative, basename } from "node:path";
 import { fileRules, globMatch, safePattern, MAX_LINE } from "../../hooks/lib.mjs";
+import { Worker } from "node:worker_threads";
 import { profile } from "../../hooks/profile.mjs";
 import { sync, synced, unsync } from "./agents.mjs";
 
@@ -82,22 +83,38 @@ function suggest() {
 
 /** Dry run: what a rule would match in this repo today, before it is written. Matched text is shown cut short, so a key
  *  the code already holds isn't copied in full into the conversation. Pure apart from reading files. */
-function tryRule(r) {
+// The scan runs in a worker that is stopped after 3 seconds, so even a pattern that is slow on a single line ends.
+const SCAN = `
+const { parentPort, workerData: w } = require("node:worker_threads");
+const re = new RegExp(w.pattern, "i");
+for (const f of w.files) {
+  f.text.split("\\n").forEach((line, i) => { const m = line.slice(0, w.max).match(re); if (m) parentPort.postMessage({ at: f.p + ":" + (i + 1), match: m[0].length > 12 ? m[0].slice(0, 6) + "…" : m[0] }); });
+  parentPort.postMessage({ file: true });
+}
+parentPort.postMessage({ done: true });`;
+function scanInWorker(pattern, list, ms = 3000) {
+  return new Promise((resolve) => {
+    const hits = []; let scanned = 0, w, timer;
+    const end = (partial) => { clearTimeout(timer); w?.terminate().catch(() => {}); resolve({ hits, scanned, partial }); };
+    try { w = new Worker(SCAN, { eval: true, workerData: { pattern, files: list, max: MAX_LINE } }); } catch { return resolve({ hits, scanned, partial: true }); }
+    timer = setTimeout(() => end(true), ms);
+    w.on("message", (m) => { if (m.done) end(false); else if (m.file) scanned++; else hits.push(m); });
+    w.on("error", () => end(true));
+  });
+}
+async function tryRule(r) {
   const all = files(), inScope = (p) => (!r.in && !r.paths) || globMatch(p, r.kind === "protect" ? r.paths : r.in), out = (p) => !!r.except && globMatch(p, r.except);
   if (r.kind === "avoid") {
     const safe = safePattern(r.pattern, "i");
     if (safe.error) return { ok: false, says: safe.error };
-    // A time budget on top of the safe-pattern check: a big repo stops after 3 seconds and says the count is partial.
-    const hits = [], until = Date.now() + 3000; let scanned = 0, partial = false;
+    const list = [];
     for (const f of all) {
-      if (Date.now() > until) { partial = true; break; }
       const p = rel(f);
       if (!/\.(m?[jt]sx?|cjs|astro|vue|svelte|py|rb|go|java|kt|php|html|ya?ml|json|toml|env|sh|sql|md)$|(^|\/)\.env/.test(p) || !inScope(p) || out(p)) continue;
-      let text; try { if (statSync(f).size > 300_000) continue; text = readFileSync(f, "utf8"); } catch { continue; }
-      scanned++;
-      text.split("\n").forEach((line, i) => { const m = line.slice(0, MAX_LINE).match(safe.re); if (m) hits.push({ at: `${p}:${i + 1}`, match: m[0].length > 12 ? m[0].slice(0, 6) + "…" : m[0] }); });
+      try { if (statSync(f).size > 300_000) continue; list.push({ p, text: readFileSync(f, "utf8") }); } catch { /* skip */ }
     }
-    const more = partial ? ` It stopped after 3 seconds, so there may be more.` : "";
+    const { hits, scanned, partial } = await scanInWorker(r.pattern, list);
+    const more = partial ? ` It stopped after 3 seconds (${scanned} of ${list.length} files read), so there may be more. If that's on a small repo, the pattern is too slow: simplify it.` : "";
     return { ok: true, kind: "avoid", scanned, partial, hits: hits.length, sample: hits.slice(0, 12),
       says: (hits.length ? `Matches ${hits.length} line${hits.length > 1 ? "s" : ""} in ${scanned} files already. The guard checks new edits, so these won't be flagged, but if this list is long the pattern is probably too broad.` : `Matches nothing in the ${scanned} files it covers today. New code that matches will be flagged.`) + more };
   }
@@ -163,7 +180,7 @@ if (cmd === "suggest") {
 } else if (cmd === "try") {
   let r; try { r = JSON.parse(arg || "{}"); } catch { console.log("Pass one rule as JSON: {kind, text, pattern?, in?, paths?, except?}"); process.exit(1); }
   if (mangled(r)) { console.log(MANGLED); process.exit(1); }
-  const t = tryRule(r);
+  const t = await tryRule(r);
   console.log(t.says);
   if (t.sample?.length) console.log(t.sample.map((s) => `- ${typeof s === "string" ? s : `${s.at}  ${s.match}`}`).join("\n") + ((t.hits ?? t.files) > t.sample.length ? `\n- and ${(t.hits ?? t.files) - t.sample.length} more` : ""));
   console.log(`\nJSON: ${JSON.stringify(t)}`);
