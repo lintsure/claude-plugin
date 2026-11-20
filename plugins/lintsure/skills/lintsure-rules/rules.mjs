@@ -3,6 +3,8 @@
 //   node rules.mjs suggest            Suggest rules from what the project already has, each with its reason.
 //   node rules.mjs write '<json>'     Add rules to .lintsure/rules.yml. <json> is an array of
 //                                      {kind, text, pattern?, paths?, in?} (kind: avoid, protect, deps, note).
+//   node rules.mjs try '<json>'       Dry run one rule on the repo before writing it: what it matches today.
+//                                      Either command also takes @file.json, safer for patterns with backslashes.
 //   node rules.mjs list               Show the rules the file holds now, in plain words.
 //   node rules.mjs sync [targets]     Write the rules into other agents' instruction files (agents, cursor, copilot,
 //                                      claude; comma separated). Default: AGENTS.md and Cursor, plus the others if present.
@@ -10,7 +12,7 @@
 // Suggestions are guesses from files that exist, never claims about what the code does. The user decides.
 import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, statSync } from "node:fs";
 import { join, relative, basename } from "node:path";
-import { fileRules } from "../../hooks/lib.mjs";
+import { fileRules, globMatch } from "../../hooks/lib.mjs";
 import { profile } from "../../hooks/profile.mjs";
 import { sync, synced, unsync } from "./agents.mjs";
 
@@ -78,12 +80,38 @@ function suggest() {
   return s.filter((x) => !have.some((h) => same(h, x))).slice(0, 10);
 }
 
+/** Dry run: what a rule would match in this repo today, before it is written. Matched text is shown cut short, so a key
+ *  the code already holds isn't copied in full into the conversation. Pure apart from reading files. */
+function tryRule(r) {
+  const all = files(), inScope = (p) => (!r.in && !r.paths) || globMatch(p, r.kind === "protect" ? r.paths : r.in), out = (p) => !!r.except && globMatch(p, r.except);
+  if (r.kind === "avoid") {
+    let re; try { re = new RegExp(r.pattern, "i"); } catch (e) { return { ok: false, says: `The pattern isn't a valid regular expression: ${e.message}` }; }
+    const hits = []; let scanned = 0;
+    for (const f of all) {
+      const p = rel(f);
+      if (!/\.(m?[jt]sx?|cjs|astro|vue|svelte|py|rb|go|java|kt|php|html|ya?ml|json|toml|env|sh|sql|md)$|(^|\/)\.env/.test(p) || !inScope(p) || out(p)) continue;
+      let text; try { if (statSync(f).size > 300_000) continue; text = readFileSync(f, "utf8"); } catch { continue; }
+      scanned++;
+      text.split("\n").forEach((line, i) => { const m = line.match(re); if (m) hits.push({ at: `${p}:${i + 1}`, match: m[0].length > 12 ? m[0].slice(0, 6) + "…" : m[0] }); });
+    }
+    return { ok: true, kind: "avoid", scanned, hits: hits.length, sample: hits.slice(0, 12),
+      says: hits.length ? `Matches ${hits.length} line${hits.length > 1 ? "s" : ""} in ${scanned} files already. The guard checks new edits, so these won't be flagged, but if this list is long the pattern is probably too broad.` : `Matches nothing in the ${scanned} files it covers today. New code that matches will be flagged.` };
+  }
+  if (r.kind === "protect") {
+    const hit = all.map(rel).filter(inScope).filter((p) => !out(p));
+    return { ok: true, kind: "protect", files: hit.length, sample: hit.slice(0, 12), says: hit.length ? `Protects ${hit.length} existing file${hit.length > 1 ? "s" : ""}. New files there are still allowed.` : "No files match these paths yet. Check the paths are right." };
+  }
+  if (r.kind === "deps") return { ok: true, kind: "deps", says: existsSync(join(root, "package.json")) || existsSync(join(root, "requirements.txt")) || existsSync(join(root, "pyproject.toml")) ? "Will ask before a new package is added." : "This project has no package file yet, so there's nothing to check until it does." };
+  return { ok: true, kind: "note", says: "A note can't be tried: nothing in the code shows whether it was followed. The agent sees it as a reminder." };
+}
+
 // YAML writing: append to the end of the rules: block, keep everything else exactly as it is.
 const q = (v) => JSON.stringify(String(v));
 function item(r) {
   const lines = [];
-  if (r.kind === "avoid") lines.push(`  - avoid: ${q(r.pattern)}`, `    say: ${q(r.text)}`, ...(r.in ? [`    in: ${q(r.in)}`] : []));
-  else if (r.kind === "protect") lines.push(`  - protect: ${q(r.paths)}`, `    say: ${q(r.text)}`);
+  const ex = r.except ? [`    except: ${q(r.except)}`] : [];
+  if (r.kind === "avoid") lines.push(`  - avoid: ${q(r.pattern)}`, `    say: ${q(r.text)}`, ...(r.in ? [`    in: ${q(r.in)}`] : []), ...ex);
+  else if (r.kind === "protect") lines.push(`  - protect: ${q(r.paths)}`, `    say: ${q(r.text)}`, ...ex);
   else if (r.kind === "deps") lines.push(`  - deps: ask`, `    say: ${q(r.text)}`);
   else lines.push(`  - note: ${q(r.text)}`, ...(r.when ? [`    when: ${q(r.when)}`] : []));
   return lines;
@@ -113,14 +141,28 @@ function write(list) {
   if (keep.length) { const r = sync(root, keep); console.log(`Updated the rules in: ${r.written.join(", ")}.`); }
 }
 
-const [cmd, arg] = process.argv.slice(2);
+const [cmd, rawArg] = process.argv.slice(2);
+// JSON can come from a file (@rule.json): some shells eat the backslashes in a pattern passed inline.
+const arg = rawArg?.startsWith("@") ? readFileSync(rawArg.slice(1), "utf8") : rawArg;
+/** A pattern with control characters lost its backslashes on the way in (\b became a backspace). */
+const mangled = (r) => r.kind === "avoid" && /[\x00-\x1f]/.test(r.pattern || "");
+const MANGLED = "The pattern arrived with control characters, so the shell ate its backslashes (\\b turned into a backspace). Write the JSON to a file and pass it as @file.json.";
 if (cmd === "suggest") {
   const s = suggest();
   if (!s.length) console.log("No suggestions: the rules file already covers what Lintsure can see in this project.");
   else { s.forEach((x, i) => console.log(`${i + 1}. ${x.text}\n   ${x.why}`)); console.log(`\nJSON: ${JSON.stringify(s)}`); }
 } else if (cmd === "write") {
   let list; try { list = JSON.parse(arg || "[]"); } catch { console.log("Pass the rules as one JSON array."); process.exit(1); }
-  write(Array.isArray(list) ? list : [list]);
+  list = Array.isArray(list) ? list : [list];
+  if (list.some(mangled)) { console.log(MANGLED); process.exit(1); }
+  write(list);
+} else if (cmd === "try") {
+  let r; try { r = JSON.parse(arg || "{}"); } catch { console.log("Pass one rule as JSON: {kind, text, pattern?, in?, paths?, except?}"); process.exit(1); }
+  if (mangled(r)) { console.log(MANGLED); process.exit(1); }
+  const t = tryRule(r);
+  console.log(t.says);
+  if (t.sample?.length) console.log(t.sample.map((s) => `- ${typeof s === "string" ? s : `${s.at}  ${s.match}`}`).join("\n") + ((t.hits ?? t.files) > t.sample.length ? `\n- and ${(t.hits ?? t.files) - t.sample.length} more` : ""));
+  console.log(`\nJSON: ${JSON.stringify(t)}`);
 } else if (cmd === "list") {
   const r = fileRules(root);
   console.log(r.length ? r.map((x) => `- ${x.text}${x.kind === "protect" ? ` (protects ${x.paths})` : ""}`).join("\n") : "No rules file yet.");
@@ -130,4 +172,4 @@ if (cmd === "suggest") {
 } else if (cmd === "unsync") {
   const d = unsync(root);
   console.log(d.length ? `Took the Lintsure rules out of: ${d.join(", ")}.` : "No Lintsure rules found in other agents' files.");
-} else console.log("Use: suggest | write '<json>' | list | sync [targets] | unsync");
+} else console.log("Use: suggest | try '<json>' | write '<json>' | list | sync [targets] | unsync");
