@@ -51,10 +51,10 @@ function madeUp(abs, root, text, whole) {
   for (const m of text.matchAll(re)) {
     const s = m[1];
     if (s.startsWith(".")) {
-      if (!resolvable(resolve(dirname(abs), s.split("?")[0]))) out.push({ kind: "made_up", line: lineOf(whole, m[0]) || lineOf(whole, s), detail: `Imports "${s}", but there's no such file.` });
+      if (!resolvable(resolve(dirname(abs), s.split("?")[0]))) out.push({ kind: "made_up", line: lineOf(whole, m[0]) || lineOf(whole, s), detail: `Imports "${s}", but no file was found at that path.` });
     } else if (!BUILTIN.has(s) && !/^[@~#]\//.test(s) && !/^(virtual:|astro:|bun:|https?:)/.test(s) && deps) {
       const n = pkgName(s);
-      if (!deps.has(n) && !existsSync(join(dirname(pj), "node_modules", n))) out.push({ kind: "made_up", line: lineOf(whole, m[0]), detail: `Imports the package "${n}", which isn't installed or listed in package.json.` });
+      if (!deps.has(n) && !existsSync(join(dirname(pj), "node_modules", n))) out.push({ kind: "made_up", line: lineOf(whole, m[0]), detail: `Imports the package "${n}", which wasn't found in node_modules or package.json.` });
     }
   }
   return out;

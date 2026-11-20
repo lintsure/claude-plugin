@@ -75,7 +75,7 @@ test("glob basics", () => {
 test("a function the module doesn't export is caught, with what it does export", () => {
   const f = fixture();
   const r = post(f, "src/routes/checkout.ts", "import { chargeCard } from '../lib/price';\nexport const go = () => chargeCard(1);\n");
-  assert.match(r.said, /chargeCard from "\.\.\/lib\/price", but that file doesn't export it\. It exports: formatPrice, toCents/);
+  assert.match(r.said, /chargeCard from "\.\.\/lib\/price", but no export by that name was found in that file \(a re-export Lintsure can't follow would also look like this\)\. It exports: formatPrice, toCents/);
   f.done();
 });
 test("real exports, aliases, defaults and type imports are not flagged", () => {
@@ -93,7 +93,7 @@ test("a default import from a file without one is caught", () => {
 test("import first, create the file next: the note says carry on, and the import survives", () => {
   const f = fixture();
   const first = post(f, "src/routes/pay.ts", "import { charge } from '../lib/payments';\nexport const pay = () => charge(1);\n");
-  assert.match(first.said, /Imports "\.\.\/lib\/payments", but there's no such file/);
+  assert.match(first.said, /Imports "\.\.\/lib\/payments", but no file was found at that path/);
   assert.match(first.said, /If you're creating that file or function in this task, carry on/);
   post(f, "src/lib/payments.ts", "export function charge(cents: number) { return cents; }\n");
   const again = post(f, "src/routes/pay.ts", "import { charge } from '../lib/payments';\nexport const pay = () => charge(2);\n");
@@ -276,7 +276,7 @@ test("a rule conflict asks once in the question window, with the recommended ans
 test("slips get a quiet fix, not a question", () => {
   const f = fixture();
   const said = post(f, "src/routes/c.ts", "import { chargeCard } from '../lib/price';\nexport const c = () => chargeCard();\n").said;
-  assert.match(said, /doesn't export it/);
+  assert.match(said, /no export by that name was found/);
   assert.doesNotMatch(said, /AskUserQuestion/);
   f.done();
 });
@@ -307,7 +307,7 @@ test("a later partial edit doesn't count as going back while the problem is stil
   const content = "import { chargeCard } from '../lib/price';\nexport const go = () => 1;\n";
   f.w("src/routes/co.ts", content);
   const first = session(f.root, sid, "PostToolUse", { tool_name: "Write", tool_input: { file_path: join(f.root, "src/routes/co.ts"), content } });
-  assert.match(first, /doesn't export it/);
+  assert.match(first, /no export by that name was found/);
   f.w("src/routes/co.ts", content.replace("=> 1", "=> 2"));
   session(f.root, sid, "PostToolUse", { tool_name: "Edit", tool_input: { file_path: join(f.root, "src/routes/co.ts"), old_string: "=> 1", new_string: "=> 2" } });
   const st = JSON.parse(readFileSync(join(tmpdir(), "lintsure-drift", readdirSync(join(tmpdir(), "lintsure-drift")).find((x) => x.includes(sid.replace(/[^\w-]/g, "")))), "utf8"));
