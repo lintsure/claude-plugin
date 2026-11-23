@@ -8,7 +8,7 @@
 //   Everything else is stored and the user gets one short note. Clean runs are silent. Any error is silent.
 // Turn it off with LINTSURE_HOOK=off.
 import { execFileSync, execSync } from "node:child_process";
-import { activity, project, wsRules } from "./lib.mjs";
+import { activity, project, wsRules, state, report } from "./lib.mjs";
 import { mkdtempSync, readFileSync, writeFileSync, existsSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, basename } from "node:path";
@@ -28,6 +28,13 @@ async function main() {
   try { input = JSON.parse(readFileSync(0, "utf8") || "{}"); } catch { quiet(); }
   if (input.stop_hook_active) quiet(); // we already spoke once in this stop; let Claude finish
   const cwd = input.cwd || process.cwd();
+
+  // Edits Drift Guard checked and passed this task: one count to the workspace, then reset (a count, nothing else).
+  const st = state(input.session_id);
+  if (KEY && st.s.passes) { await report({ root: cwd, events: [], passes: st.s.passes, project: basename(cwd) }); st.s.passes = 0; st.save(); }
+  // Workspace switches: a paused agent, or the End-of-Task Scan turned off on the Guards page, skips the scan.
+  const wsSet = KEY ? await wsRules(project(cwd)).catch(() => null) : null;
+  if (wsSet?.paused || wsSet?.guards?.end?.enabled === false) quiet();
 
   // Files this session touched: tracked changes plus new untracked files, relative to cwd.
   let changed = [];

@@ -2,8 +2,9 @@
 // Lintsure Danger Guard (PreToolUse on Bash). Destructive commands go to the user's permission prompt ("ask") with the
 // reason and a safer option, before they run. Nothing is refused outright and nothing else is slowed down.
 // Tells running a command apart from text that mentions it: `grep "rm -rf"` and `echo "DROP TABLE"` are fine.
-// Runs in every mode (it asks the user, it doesn't talk to the agent). Off with LINTSURE_DANGER=off.
-import { quiet, say, input, report, rules } from "./lib.mjs";
+// Runs in every Drift Guard mode. With a workspace, the Guards page can turn it off or switch it to "Tells agent"
+// (the command is refused and the agent uses the safer way). Off with LINTSURE_DANGER=off.
+import { quiet, say, input, rules, report, guardSetting, holdAnswer } from "./lib.mjs";
 
 /** Split a command line into simple commands, keeping quoted text intact. */
 export function segments(cmd) {
@@ -114,11 +115,18 @@ async function main() {
   if ((process.env.LINTSURE_DANGER || process.env.LINTSURE_HOOK || "").toLowerCase() === "off") quiet();
   const inp = input();
   if (inp.tool_name !== "Bash" && inp.tool_name !== "PowerShell") quiet();
+  let data = null; try { data = await rules(inp.cwd || process.cwd()); } catch { /* fine */ }
+  // The workspace circuit breaker: a shell command can write too, so it waits for the user like an edit does.
+  const h = holdAnswer(data); if (h) say(h);
   const found = danger(inp.tool_input?.command);
   if (!found.length) quiet();
-  let project = ""; try { project = (await rules(inp.cwd || process.cwd())).project.name; } catch { /* fine */ }
+  const g = guardSetting(data, "danger");
+  if (g.off) quiet();
+  const project = data?.project.name || "";
   // Only which kind of command it was goes to the workspace, never the command (it can hold paths or secrets).
-  await report({ events: found.map((f) => ({ kind: "danger", project, detail: f.why, outcome: "caught" })) });
-  say({ hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "ask", permissionDecisionReason: `Lintsure Danger Guard: ${found.map((f) => `${f.why} Safer: ${f.safer}`).join(" ")}` } });
+  await report({ events: found.map((f) => ({ kind: "danger", project, detail: f.why, outcome: g.mode === 1 ? "refused" : "caught" })) });
+  const why = `Lintsure Danger Guard: ${found.map((f) => `${f.why} Safer: ${f.safer}`).join(" ")}${g.note ? ` Team note: ${g.note}` : ""}`;
+  // Guards page: "Asks user" (default) asks before running; "Tells agent" refuses and the agent uses the safer way.
+  say({ hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: g.mode === 1 ? "deny" : "ask", permissionDecisionReason: g.mode === 1 ? `${why} Use the safer way instead.` : why } });
 }
 if (process.argv[1] && process.argv[1].endsWith("danger.mjs")) main().catch(quiet);

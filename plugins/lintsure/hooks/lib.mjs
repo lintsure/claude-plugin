@@ -101,7 +101,20 @@ export async function rules(root, fresh = false) {
     const ex = (ws?.exceptions || []).filter((x) => x.rule_id && x.rule_id === r.id).map((x) => x.item);
     return ex.length ? { ...r, except: [r.except, ...ex].filter(Boolean).join(",") } : r;
   });
-  return { rules: all, exceptions: ws?.exceptions || [], memory: ws?.memory || null, project: p, mode };
+  return { rules: all, exceptions: ws?.exceptions || [], memory: ws?.memory || null, project: p, mode,
+    paused: !!ws?.paused, hold: !!ws?.hold, guards: ws?.guards || {}, reverts: ws?.reverts || [] };
+}
+
+/** Workspace switches for one guard (danger, threat, drift, code, end). With no workspace everything stays on.
+ *  off: supervision for this agent is paused, or the guard is turned off. mode: 0 asks the user, 1 tells the agent. */
+export function guardSetting(data, guard) {
+  const g = data?.guards?.[guard] || {};
+  return { off: !!data?.paused || g.enabled === false, mode: g.mode === 1 ? 1 : 0, note: g.note ? String(g.note).slice(0, 500) : "" };
+}
+/** The workspace circuit breaker: every agent write waits for a person. Pure; returns the PreToolUse answer or null. */
+export function holdAnswer(data) {
+  if (!data?.hold) return null;
+  return { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "ask", permissionDecisionReason: "Lintsure: the workspace circuit breaker is on, so every agent write waits for you. Release it in the Lintsure dashboard (Pause all agents) to let agents work on their own again." } };
 }
 /** Workspace rules for a project (needs LINTSURE_API_KEY), cached for 60 seconds. Exported for the end-of-task scan. */
 export async function wsRules(p, fresh) {

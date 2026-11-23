@@ -9,7 +9,7 @@
 //   Censys, "ARTEX: Agentic Asbestos" (Nov 5, 2026)
 // A match is a reason to look, not proof of an attack: IPs get reassigned, and the FBI asks to vet indicators first.
 // Runs in every mode. Off with LINTSURE_THREAT=off.
-import { quiet, say, input, report, rules } from "./lib.mjs";
+import { quiet, say, input, rules, report, guardSetting } from "./lib.mjs";
 import { segments } from "./danger.mjs";
 
 const FBI = "FBI FLASH-20261113-001";
@@ -70,11 +70,15 @@ async function main() {
   const shell = inp.tool_name === "Bash" || inp.tool_name === "PowerShell";
   const found = shell ? threatCommand(ti.command) : ["Edit", "Write", "MultiEdit"].includes(inp.tool_name) ? threatEdit(ti.file_path, newText(inp.tool_name, ti)) : [];
   if (!found.length) quiet();
-  let project = ""; try { project = (await rules(inp.cwd || process.cwd())).project.name; } catch { /* fine */ }
+  let data = null; try { data = await rules(inp.cwd || process.cwd()); } catch { /* fine */ }
+  const g = guardSetting(data, "threat");
+  if (g.off) quiet();
+  const project = data?.project.name || "";
   const seen = [...new Map(found.map((f) => [f.id, f])).values()];
   // Only what kind of indicator matched goes to the workspace, never the command or file contents.
   await report({ events: seen.map((f) => ({ kind: "threat", project, file: shell ? undefined : String(ti.file_path || "").split(/[\\/]/).pop(), detail: f.why, outcome: "caught" })) });
   const reason = `Lintsure Threat Guard: ${seen.map((f) => f.why).join(" ")} Source: ${[...new Set(seen.map((f) => f.src))].join("; ")}. A match is a reason to look, not proof of an attack. Allow it only if this is authorized security testing you expect.`;
-  say({ hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "ask", permissionDecisionReason: reason } });
+  const full = `${reason}${g.note ? ` Team note: ${g.note}` : ""}`;
+  say({ hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: g.mode === 1 ? "deny" : "ask", permissionDecisionReason: g.mode === 1 ? `${full} Don't run or add it; tell the user what you were about to do.` : full } });
 }
 if (process.argv[1] && process.argv[1].endsWith("threat.mjs")) main().catch(quiet);

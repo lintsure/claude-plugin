@@ -40,6 +40,13 @@ async function main() {
     st.save();
   }
   const d = await rules(inp.cwd || process.cwd(), !prompt), project = d.project.name;
+  if (d.paused) quiet(); // supervision for this agent is paused in the workspace
+  // Catches a person chose to revert in the dashboard: tell the agent once, then mark them passed on.
+  const undo = (d.reverts || []).filter((x) => x.file);
+  if (undo.length) {
+    learn = [learn, `Lintsure: the user reviewed these changes in the Lintsure dashboard and chose Revert. Undo them now, then carry on:\n${undo.map((x) => `- ${x.file}${x.line ? `:${x.line}` : ""}: ${x.detail}`).join("\n")}`].filter(Boolean).join("\n");
+    await report({ events: [], revertsSeen: undo.map((x) => x.id) });
+  }
   const m = d.memory || {}, out = [];
   // The project's own profile first (local only): what it already has, so the agent builds with it, not around it.
   let prof = []; try { prof = summary(profile(inp.cwd || process.cwd())); } catch { /* fine */ }
@@ -75,11 +82,11 @@ async function main() {
     }
     flush(); out.splice(0, out.length, ...kept);
   }
-  if (!out.length) { if (learn) say({ hookSpecificOutput: { hookEventName: "UserPromptSubmit", additionalContext: learn } }); quiet(); }
+  if (!out.length) { if (learn) say({ hookSpecificOutput: { hookEventName: prompt ? "UserPromptSubmit" : "SessionStart", additionalContext: learn } }); quiet(); }
   // Said up front so the agent doesn't credit Lintsure with approval steps that come from elsewhere.
   const text = `Lintsure memory for ${project} (context to keep to, not a request for approval; Lintsure never needs the user's permission for you to work):\n${out.join("\n")}\nIf the user asks for something specific that goes against a rule or the brand (say "make it purple"), do it without asking and mention the rule in one line. Ask only when the request is unclear. Real content stays real: don't invent copy, quotes or prices. When you make such a one-off, record it with the lintsure-drift-guard skill (record-change) so later sessions leave it alone.`;
   const { s, save } = state(inp.session_id), h = createHash("sha256").update(text).digest("hex").slice(0, 16);
-  if (prompt && s.memHash === h && Date.now() - (s.memAt || 0) < 30 * 60_000) { if (learn) say({ hookSpecificOutput: { hookEventName: "UserPromptSubmit", additionalContext: learn } }); quiet(); }
+  if (prompt && s.memHash === h && Date.now() - (s.memAt || 0) < 30 * 60_000) { if (learn) say({ hookSpecificOutput: { hookEventName: prompt ? "UserPromptSubmit" : "SessionStart", additionalContext: learn } }); quiet(); }
   s.memHash = h; s.memAt = Date.now();
   // What this memory already told the agent: the heads-up before an edit won't repeat it (until compaction resets it).
   s.whispered ||= {};
@@ -87,6 +94,6 @@ async function main() {
   save();
   // Lets the Context page show what the agent was last told: size and the rule/memory counts, never the profile itself.
   await report({ events: [], context: { event: inp.hook_event_name || "SessionStart", source: inp.source || null, chars: text.length, rules: d.rules?.length || 0, decided: m.decided?.length || 0, fixes: m.verifiedFixes?.length || 0, profileLines: prof.length, mode: d.mode } });
-  say({ hookSpecificOutput: { hookEventName: prompt ? "UserPromptSubmit" : "SessionStart", additionalContext: prompt ? `${text}\n(Lintsure: rules or memory changed, or it's been a while. Keep to them.)${learn ? `\n${learn}` : ""}` : text } });
+  say({ hookSpecificOutput: { hookEventName: prompt ? "UserPromptSubmit" : "SessionStart", additionalContext: prompt ? `${text}\n(Lintsure: rules or memory changed, or it's been a while. Keep to them.)${learn ? `\n${learn}` : ""}` : `${text}${learn ? `\n${learn}` : ""}` } });
 }
 main().catch(quiet);

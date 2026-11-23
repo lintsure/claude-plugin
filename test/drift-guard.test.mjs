@@ -669,3 +669,14 @@ test("strict: a rule that can't finish is reported as inconclusive and never blo
   assert.match(r.said, /could not finish 1 rule.*neither a pass nor a catch/);
   f.done();
 });
+
+test("workspace switches: paused or guard off silences a guard, the breaker asks, no workspace keeps everything on", async () => {
+  const { guardSetting, holdAnswer } = await import("../plugins/lintsure/hooks/lib.mjs");
+  assert.deepEqual(guardSetting(null, "danger"), { off: false, mode: 0, note: "" });
+  assert.equal(guardSetting({ paused: true }, "danger").off, true);
+  assert.equal(guardSetting({ guards: { code: { enabled: false, mode: 1 } } }, "code").off, true);
+  assert.equal(guardSetting({ guards: { code: { enabled: false } } }, "drift").off, false);
+  assert.deepEqual(guardSetting({ guards: { threat: { enabled: true, mode: 1, note: "ask Sam" } } }, "threat"), { off: false, mode: 1, note: "ask Sam" });
+  assert.equal(holdAnswer({ hold: false }), null);
+  assert.equal(holdAnswer({ hold: true }).hookSpecificOutput.permissionDecision, "ask");
+});

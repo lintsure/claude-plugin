@@ -10,7 +10,9 @@ import { readFileSync, existsSync, statSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { join, dirname, relative, basename, resolve } from "node:path";
 import { builtinModules } from "node:module";
-import { quiet, say, input, off, state, rules, report, globMatch, excepted, safePattern, matchRules } from "./lib.mjs";
+import { quiet, say, input, off, state, rules, report, globMatch, excepted, safePattern, matchRules, guardSetting, holdAnswer } from "./lib.mjs";
+// Which guard on the Guards page a catch kind belongs to (the same map the workspace uses); anything else is Drift Guard.
+const GUARD_OF = { made_up: "code", duplicate: "code", band_aid: "code", test: "code", package: "threat", threat: "threat" };
 import { profileChecks, profile } from "./profile.mjs";
 import { resolveFile, missingExports, duplicateFunctions, bandAids, testGuard, packageGuard, scopeGuard, secretGuard, privacyGuard } from "./code.mjs";
 
@@ -167,6 +169,9 @@ async function main() {
     const st = state(inp.session_id), cur = read(abs);
     if (cur !== null && cur.length < 300_000) { st.s.before = { [rel]: cur }; st.save(); }
   }
+  // Workspace switches: the circuit breaker holds every write for the user; a paused agent isn't checked at all.
+  if (phase === "pre") { const h = holdAnswer(data); if (h) say(h); }
+  if (data.paused) quiet();
   if (phase === "post" && inp.tool_name === "Write") { const st = state(inp.session_id); data.before = st.s.before?.[rel]; if (st.s.before) { delete st.s.before; st.save(); } }
   if (phase === "pre" && mode === "quiet") quiet();
   // Rule patterns run off the main thread with a hard time limit, on both the added text and the whole file.
@@ -180,9 +185,13 @@ async function main() {
     let installed = []; try { const pj = JSON.parse(whole); installed = Object.keys({ ...pj.dependencies, ...pj.devDependencies }).filter((n) => !added.some(([a]) => a === n)); } catch { /* fine */ }
     if (added.length) found.push(...(await packageGuard(added, installed, whole)));
   }
+  // Guards turned off on the Guards page: their catches are dropped here (code checks, packages, and drift rules).
+  for (let i = found.length - 1; i >= 0; i--) if (guardSetting(data, GUARD_OF[found[i].kind] || "drift").off) found.splice(i, 1);
 
   // Raise each problem once per session; remember what was raised so a later clean edit counts as "went back".
   const { s, save } = state(inp.session_id);
+  // A checked edit with nothing to say counts as passed; the count goes to the workspace once, at the end of the task.
+  if (phase === "post" && !found.length) s.passes = (s.passes || 0) + 1;
   s.raised ||= {};
   // Nothing to refuse before the edit: whisper what the project already has for this kind of file, once per topic.
   if (phase === "pre" && !found.length) {
@@ -211,7 +220,8 @@ async function main() {
   const unsureNote = unsure.length ? `Lintsure Drift Guard could not finish ${unsure.length} rule${unsure.length > 1 ? "s" : ""}: ${unsure.map((f) => `"${f.rule}"`).join(", ")}. Not checked, so neither a pass nor a catch. Simplify the pattern in .lintsure/rules.yml.` : "";
   if (!sure.length) say({ hookSpecificOutput: { hookEventName: phase === "pre" ? "PreToolUse" : "PostToolUse", additionalContext: unsureNote } });
   fresh = sure;
-  const lines = fresh.slice(0, 5).map((f) => `- ${rel}${f.line ? `:${f.line}` : ""}: ${f.detail}${f.rule ? ` Rule: "${f.rule}"` : ""}`).join("\n");
+  const note = guardSetting(data, "drift").note;
+  const lines = fresh.slice(0, 5).map((f) => `- ${rel}${f.line ? `:${f.line}` : ""}: ${f.detail}${f.rule ? ` Rule: "${f.rule}"` : ""}`).join("\n") + (note ? `\nTeam note: ${note}` : "");
   // Rules, protected files and new packages are the user's call; everything else is a slip the agent fixes itself.
   const ask = s.override ? "" : decision(fresh);
   if (phase === "pre") say({ hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: `Lintsure Drift Guard refused this edit:\n${lines}\n${ask || "Change the edit so it keeps to the rule."}` } });
