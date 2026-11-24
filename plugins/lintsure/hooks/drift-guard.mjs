@@ -85,6 +85,8 @@ const MSG_TAIL = {
   strict: "Go back and fix it before carrying on: keep to the rule, or use code that exists in this project. If the user asked for this on purpose, say so and carry on.",
 };
 
+// Files an agent reads as its own standing instructions or settings.
+const INSTRUCTIONS = /(^|\/)(AGENTS\.md|CLAUDE\.md|GEMINI\.md|\.cursorrules|\.windsurfrules|copilot-instructions\.md)$|(^|\/)\.(claude|cursor|codex|gemini|agents)\/(settings(\.local)?\.json$|rules\/|skills\/.+\/SKILL\.md$)/i;
 function checks(phase, inp, data, root, abs, rel, text, whole) {
   const found = [], mode = data.mode;
   const ruleChecks = phase === "pre" ? mode === "strict" : mode !== "strict";
@@ -106,6 +108,9 @@ function checks(phase, inp, data, root, abs, rel, text, whole) {
     if (phase === "post" && r.kind === "deps") for (const [n] of newDeps(abs, root, text, replaced(inp.tool_name, inp.tool_input || {}, root, rel, data.before))) found.push({ kind: "deps", ruleId: r.id, line: lineOf(whole, `"${n}"`), rule: r.text, detail: `Added the package "${n}".` });
   }
   if (phase === "post") found.push(...madeUp(abs, root, text, whole), ...missingExports(abs, text, whole), ...duplicateFunctions(root, rel, text, whole), ...bandAids(rel, text, replaced(inp.tool_name, inp.tool_input || {}, root, rel, data.before), whole), ...testGuard(rel, text, replaced(inp.tool_name, inp.tool_input || {}, root, rel, data.before), whole), ...scopeGuard(rel, inp.tool_name), ...secretGuard(rel, text, replaced(inp.tool_name, inp.tool_input || {}, root, rel, data.before)), ...privacyGuard(rel, text, replaced(inp.tool_name, inp.tool_input || {}, root, rel, data.before)), ...profileChecks(root, rel, text, whole, (data.exceptions || []).map((x) => x.item).filter(Boolean).join(",")));
+  // A file agents read as their own instructions or settings was changed. No rule is broken, so this is a one-line note
+  // and stays on this machine: later sessions will follow the new text, and the user should hear about it once.
+  if (phase === "post" && existed && INSTRUCTIONS.test(rel)) found.push({ kind: "instructions", local: true, line: 0, detail: `Changed ${rel}, which every later session reads as its own instructions. Tell the user in one line what you changed and why.` });
   // One change, one note: when the user's own rule about skipping tests caught it, drop the built-in note about it.
   if (found.some((f) => f.kind === "rule" && /skip|only/i.test(`${f.detail} ${f.rule || ""}`))) for (let i = found.length - 1; i >= 0; i--) if (found[i].kind === "band_aid" && /^Skips or isolates/.test(found[i].detail)) found.splice(i, 1);
   // A one-off the user agreed to covers only what it's about, so no session "fixes" it back and nothing else slips through.
@@ -210,7 +215,7 @@ async function main() {
   if (!fresh.length) { if (back.length) await report({ events: [], returned: back }); save(); quiet(); }
 
   const outcome = phase === "pre" ? "refused" : s.override ? "overridden" : "caught";
-  const ids = await report({ mode, events: fresh.map((f) => ({ kind: f.kind, ruleId: f.ruleId, project, file: rel, line: f.line, detail: f.public || f.detail, outcome })), returned: back });
+  const ids = await report({ mode, events: fresh.filter((f) => !f.local).map((f) => ({ kind: f.kind, ruleId: f.ruleId, project, file: rel, line: f.line, detail: f.public || f.detail, outcome })), returned: back });
   // A refused edit never happened, so there's nothing to "go back" from: don't remember it as raised.
   if (phase === "post") fresh.forEach((f, i) => (s.raised[sig(f)] = ids[i] || ""));
   save();
