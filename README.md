@@ -16,7 +16,7 @@ Open-source guardrails for Claude Code, plus Cursor, Gemini CLI and Codex throug
 | End-of-task scan | One local scan against OWASP Top 10, OWASP LLM Top 10, CWE Top 25, GDPR, the EU AI Act and the EU CRA, when a session that changed files ends. Partial findings come with what to check first and the exact change when there is one | When the agent stops |
 | Activity log | Writes each catch and decision to `.lintsure/activity.jsonl` (rule, file, line, outcome; never code or secrets). Files marked `lintsure:private` are left out. `npx lintsure export --otlp-json` turns it into an OpenTelemetry file | Whenever a guard catches something |
 | `lintsure` MCP server | `scan`, `plan_checks`, `explain_rule`, `explain_framework`, `classify` | When the agent calls it |
-| Skills | `lintsure-check`, `lintsure-ship`, `lintsure-triage`, `lintsure-rules`, `lintsure-drift-guard` | Claude decides when they apply |
+| Skills | `lintsure-check`, `lintsure-prelaunch`, `lintsure-triage`, `lintsure-rules`, `lintsure-drift-guard` | Claude decides when they apply |
 
 The guards are deterministic pattern checks, not an AI model: fast, the same every time. They are seatbelts, not a sandbox. Not an audit or legal advice.
 
