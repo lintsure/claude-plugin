@@ -1,0 +1,16 @@
+{
+  "name": "lintsure",
+  "owner": {
+    "name": "Lintsure"
+  },
+  "metadata": {
+    "description": "Guards each edit and command your agent makes, and checks its code with 114 rules mapped to the OWASP Top 10, OWASP LLM Top 10, CWE Top 25, GDPR, the EU AI Act and the EU CRA. Runs locally; nothing is sent unless you add an API key."
+  },
+  "plugins": [
+    {
+      "name": "lintsure",
+      "source": "plugins/lintsure",
+      "description": "Guards each edit and command your agent makes, and checks its code with 114 rules mapped to the OWASP Top 10, OWASP LLM Top 10, CWE Top 25, GDPR, the EU AI Act and the EU CRA. Runs locally; nothing is sent unless you add an API key."
+    }
+  ]
+}

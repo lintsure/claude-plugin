@@ -7,7 +7,7 @@
     "url": "https://lintsure.com"
   },
   "homepage": "https://lintsure.com/docs/mcp",
-  "repository": "https://github.com/lintsure/claude-plugin",
+  "repository": "https://github.com/lintsure/plugin",
   "license": "Apache-2.0",
   "keywords": [
     "security",

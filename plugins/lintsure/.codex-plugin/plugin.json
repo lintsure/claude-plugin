@@ -1,0 +1,32 @@
+{
+  "name": "lintsure",
+  "version": "0.3.5",
+  "description": "Keep your AI coding agent on track and in context: Drift Guard holds it to your project rules, Danger Guard asks before risky commands, Loop Guard notices when it repeats itself, Threat Guard stops known AI attack tooling, and a local scan checks the code it wrote. Runs on your machine and sends nothing unless you add a Lintsure API key. Not an audit or legal advice.",
+  "author": {
+    "name": "Lintsure",
+    "url": "https://lintsure.com"
+  },
+  "homepage": "https://lintsure.com/docs/mcp",
+  "repository": "https://github.com/lintsure/plugin",
+  "license": "Apache-2.0",
+  "keywords": [
+    "security",
+    "guardrails",
+    "ai-coding-agents",
+    "owasp",
+    "gdpr",
+    "eu-ai-act",
+    "mcp"
+  ],
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "hooks": "./codex/hooks.json",
+  "interface": {
+    "displayName": "Lintsure",
+    "shortDescription": "Keep your AI coding agent on track and in context",
+    "longDescription": "Guards each edit and command your agent makes, and checks its code with 114 rules mapped to the OWASP Top 10, OWASP LLM Top 10, CWE Top 25, GDPR, the EU AI Act and the EU CRA. Runs locally; nothing is sent unless you add an API key.",
+    "developerName": "Lintsure",
+    "category": "Security",
+    "websiteURL": "https://lintsure.com"
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "name": "lintsure",
+  "interface": {
+    "displayName": "Lintsure"
+  },
+  "plugins": [
+    {
+      "name": "lintsure",
+      "source": {
+        "source": "local",
+        "path": "./plugins/lintsure"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Security"
+    }
+  ]
+}

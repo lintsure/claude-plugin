@@ -36,7 +36,7 @@ It records what it wrote, never overwrites a folder that isn't its own, and unin
 ## Install
 
 ```bash
-/plugin marketplace add lintsure/claude-plugin
+/plugin marketplace add lintsure/plugin
 /plugin install lintsure@lintsure
 ```
 
