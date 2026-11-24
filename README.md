@@ -40,6 +40,30 @@ It records what it wrote, never overwrites a folder that isn't its own, and unin
 /plugin install lintsure@lintsure
 ```
 
+That is Claude Code. For the other agents:
+
+**Any of them, from the Lintsure CLI.** It shows what it will write first, leaves a hooks file you already have alone, and `--undo` takes it out again:
+
+```bash
+npx lintsure plugin
+```
+
+**Gemini CLI**, as an extension:
+
+```bash
+gemini extensions install https://github.com/lintsure/plugin
+```
+
+**Codex**, as a plugin. Add the marketplace, install Lintsure from `/plugins`, then review its hooks under `/hooks`, because Codex doesn't run a plugin's hooks until you have:
+
+```bash
+codex plugin marketplace add lintsure/plugin
+```
+
+**Cursor:** use the CLI line above, or add `https://github.com/lintsure/plugin` as a team marketplace in Customize.
+
+The guards for Cursor, Codex and Gemini CLI are new. Tell us if one misbehaves.
+
 **Local (no account):** that's it. Without `LINTSURE_API_KEY`, nothing goes to lintsure.com: no rules sync, no reports, no connection to the hosted workspace. Your rules come from `.lintsure/rules.yml` in your repo. The only things that leave your machine are the ones any npm user already does: `npx` downloads the engine, and Package Guard looks up the name and version of a package your agent adds on npm and OSV (turn that off with `LINTSURE_PACKAGES=offline`).
 
 **Hosted workspace (beta):** set your key (create one at lintsure.com/app/keys) before starting Claude Code, and add the workspace connector:
