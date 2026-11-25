@@ -35,3 +35,13 @@ test("Gemini CLI's hooks at the top of the repo are the plugin's own, and every 
   for (const s of scripts) assert.ok(existsSync(at(s)), s);
   assert.deepEqual(json("gemini-extension.json").mcpServers, json(`${P}/.mcp.json`).mcpServers);
 });
+
+test("every skill's header is one a strict YAML reader accepts", async () => {
+  const { readdirSync } = await import("node:fs");
+  for (const d of readdirSync(at(`${P}/skills`))) {
+    const head = readFileSync(at(`${P}/skills/${d}/SKILL.md`), "utf8").replace(/\r\n/g, "\n").match(/^---\n([\s\S]*?)\n---/)?.[1] ?? "";
+    assert.match(head, /^name: /m, d);
+    // An unquoted value with a colon and a space in it is read as a nested map, and the skill then loads with no description.
+    for (const line of head.split("\n")) assert.ok(!/^\w+: (?![>|"'])[^\n]*: /.test(line), `${d}: quote or fold this line: ${line.slice(0, 60)}`);
+  }
+});

@@ -1,6 +1,7 @@
 ---
 name: lintsure-rules
-description: Use when the user wants to set up, suggest, add or see Lintsure rules for a project ("Lintsure, suggest rules", "Lintsure: never let it skip tests", "what rules do we have"), or share them with other agents ("make Cursor follow these too"). Suggests rules from what the project already has, lets the user keep, edit or drop them, and writes the kept ones to .lintsure/rules.yml.
+description: >-
+  Use when the user wants to set up, suggest, add or see Lintsure rules for a project ("Lintsure, suggest rules", "Lintsure: never let it skip tests", "what rules do we have"), or share them with other agents ("make Cursor follow these too"). Suggests rules from what the project already has, lets the user keep, edit or drop them, and writes the kept ones to .lintsure/rules.yml.
 ---
 
 # Lintsure rules
