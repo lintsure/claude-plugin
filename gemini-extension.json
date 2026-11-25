@@ -1,13 +1,13 @@
 {
   "name": "lintsure",
-  "version": "0.3.6",
+  "version": "0.3.7",
   "description": "Keep your AI coding agent on track and in context: Drift Guard holds it to your project rules, Danger Guard asks before risky commands, Loop Guard notices when it repeats itself, Threat Guard stops known AI attack tooling, and a local scan checks the code it wrote. Runs on your machine and sends nothing unless you add a Lintsure API key. Not an audit or legal advice.",
   "mcpServers": {
     "lintsure": {
       "command": "npx",
       "args": [
         "-y",
-        "@lintsure/mcp@0.3.16"
+        "@lintsure/mcp@0.3.17"
       ]
     }
   }

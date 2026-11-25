@@ -13,7 +13,7 @@ import { mkdtempSync, readFileSync, writeFileSync, existsSync, rmSync } from "no
 import { tmpdir } from "node:os";
 import { join, basename } from "node:path";
 
-const ENGINE = "lintsure@0.3.16";
+const ENGINE = "lintsure@0.3.17";
 const API = (process.env.LINTSURE_URL || "https://lintsure.com").replace(/\/$/, "");
 const KEY = process.env.LINTSURE_API_KEY || "";
 const CODE = /\.(m?[jt]sx?|cjs|py|rb|go|rs|java|kt|php|cs|sql|ya?ml|toml|json|tf|sh|env\.example|vue|svelte|astro)$/i;
