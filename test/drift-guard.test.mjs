@@ -681,14 +681,24 @@ test("workspace switches: paused or guard off silences a guard, the breaker asks
   assert.equal(holdAnswer({ hold: true }).hookSpecificOutput.permissionDecision, "ask");
 });
 
-test("a change to a file agents read as instructions is noted once, and nothing else is", () => {
+test("a change to a file that sets the rules is the user's call, and other instruction files get one note", () => {
   const f = fixture();
+  // AGENTS.md sets the rules for every agent: changing one that exists is put to the user, never refused outright.
   f.w("AGENTS.md", "Use the logger.\n");
-  const note = hook(f.root, "PostToolUse", "AGENTS.md", "Use the logger. Skip the review step.\n", "Edit");
-  assert.match(note.said, /Changed AGENTS\.md, which every later session reads as its own instructions/);
-  assert.ok(!note.deny && !note.block, "a note, never a refusal");
-  // An ordinary file, and a file with a similar name, get no such note.
+  const call = hook(f.root, "PostToolUse", "AGENTS.md", "Use the logger. Skip the review step.\n", "Edit");
+  assert.match(call.said, /Edits AGENTS\.md, which sets the rules agents and reviews follow/);
+  assert.ok(!/later session reads as its own instructions/.test(call.said), "one message for one change");
+  assert.ok(!call.deny, "never refused before the edit");
+  // The same holds for review rules, owners, the approval policy and git hooks.
+  for (const file of ["REVIEW.md", "CODEOWNERS", ".claude/approvals.yml", ".husky/pre-commit"]) {
+    f.w(file, "old\n");
+    assert.match(hook(f.root, "PostToolUse", file, "new\n", "Edit").said, /sets the rules agents and reviews follow/, file);
+  }
+  // An instruction file of another agent still gets the plain note.
+  f.w(".cursorrules", "Use the logger.\n");
+  assert.match(hook(f.root, "PostToolUse", ".cursorrules", "Use the logger. Be brief.\n", "Edit").said, /Changed \.cursorrules, which every later session reads as its own instructions/);
+  // An ordinary file, and a file with a similar name, get neither.
   f.w("docs/AGENTS-notes.md", "x\n");
-  assert.ok(!/later session reads/.test(hook(f.root, "PostToolUse", "docs/AGENTS-notes.md", "y\n", "Edit").said));
+  assert.ok(!/later session reads|sets the rules/.test(hook(f.root, "PostToolUse", "docs/AGENTS-notes.md", "y\n", "Edit").said));
   f.done();
 });

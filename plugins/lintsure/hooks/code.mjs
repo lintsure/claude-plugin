@@ -214,13 +214,17 @@ export async function packageGuard(added, installed, whole, online = !["offline"
 
 // Scope Guard: files that shouldn't change as a side effect. Lock files by hand are a slip; CI and .env are the
 // user's call (decision), unless they asked.
-export function scopeGuard(rel, tool) {
+export function scopeGuard(rel, tool, existed = true) {
   const name = rel.split("/").pop();
   if (/^(package-lock\.json|npm-shrinkwrap\.json|pnpm-lock\.yaml|yarn\.lock|bun\.lockb?|Cargo\.lock|poetry\.lock|uv\.lock|Gemfile\.lock|composer\.lock|go\.sum)$/.test(name)) return [{ kind: "scope", line: 0, detail: `Edits ${name} by hand. Lock files are written by the package manager; change package.json and run the install instead.` }];
   if (/^\.github\/workflows\/[^/]+\.ya?ml$|^\.gitlab-ci\.yml$|^\.circleci\//.test(rel)) return [{ kind: "scope", decide: true, line: 0, rule: "Change CI only when the task is about CI", detail: `Edits the CI pipeline (${rel}). Changes there can skip checks or expose secrets.` }];
   if (/^\.env(\.(?!example$|sample$|template$)[\w.-]+)?$/.test(name) && tool !== "Read") return [{ kind: "scope", decide: true, line: 0, rule: "Leave .env files to the user", detail: `Edits ${rel}, which holds this machine's secrets and settings.` }];
+  // The files that set the rules for agents and reviews: instructions, review rules, owners, approval policy, agent
+  // settings and git hooks. A new one is fine; changing one that exists changes what every later check looks for.
+  if (existed && RULE_SETTERS.test(rel)) return [{ kind: "scope", decide: true, line: 0, rule: "Change the files that set the rules only when asked", detail: `Edits ${rel}, which sets the rules agents and reviews follow. Every later session and review reads the new text.` }];
   return [];
 }
+export const RULE_SETTERS = /(^|\/)(CLAUDE\.md|AGENTS\.md|REVIEW\.md|CODEOWNERS)$|^\.claude\/(settings(\.local)?\.json|approvals\.ya?ml)$|^\.claude\/skills\/(steward|verify)\/SKILL\.md$|^\.(husky|githooks)\//;
 
 // Secret Guard: keys and passwords written into code, tests or config. The finding never contains the secret itself.
 const SECRETS = [
