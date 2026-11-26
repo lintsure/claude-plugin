@@ -10,7 +10,7 @@ import { readFileSync, existsSync, statSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { join, dirname, relative, basename, resolve } from "node:path";
 import { builtinModules } from "node:module";
-import { quiet, say, input, off, state, rules, report, globMatch, excepted, safePattern, matchRules, guardSetting, holdAnswer } from "./lib.mjs";
+import { quiet, say, input, off, state, rules, report, globMatch, excepted, safePattern, matchRules, guardSetting, holdAnswer, projectFor, useProject } from "./lib.mjs";
 // Which guard on the Guards page a catch kind belongs to (the same map the workspace uses); anything else is Drift Guard.
 const GUARD_OF = { made_up: "code", duplicate: "code", band_aid: "code", test: "code", package: "threat", threat: "threat" };
 import { profileChecks, profile } from "./profile.mjs";
@@ -165,7 +165,11 @@ async function main() {
   if (off()) quiet();
   const inp = input(), phase = inp.hook_event_name === "PreToolUse" ? "pre" : "post";
   if (!["Edit", "Write", "MultiEdit"].includes(inp.tool_name)) quiet();
-  const ti = inp.tool_input || {}, root = resolve(inp.cwd || process.cwd()), abs = resolve(root, ti.file_path || "");
+  // The file decides the project: its rules come from the nearest .lintsure folder, so two projects opened under one
+  // folder each keep their own. Paths in every message are then relative to that project.
+  const ti = inp.tool_input || {}, opened = resolve(inp.cwd || process.cwd()), abs = resolve(opened, ti.file_path || "");
+  const root = ti.file_path ? projectFor(opened, abs) : opened;
+  useProject(root);
   const rel = relative(root, abs).replace(/\\/g, "/");
   if (!ti.file_path || rel.startsWith("..") || rel.startsWith(".lintsure/")) quiet(); // the rules file itself is the user's business
   const text = added(inp.tool_name, ti), whole = phase === "pre" ? text : read(abs) ?? text;
@@ -198,6 +202,8 @@ async function main() {
   // A checked edit with nothing to say counts as passed; the count goes to the workspace once, at the end of the task.
   if (phase === "post" && !found.length) s.passes = (s.passes || 0) + 1;
   s.raised ||= {};
+  // The projects this session edited, so the check at the end of the task scans each one with its own settings.
+  if (phase === "post" && !(s.roots ||= []).includes(root)) { s.roots.push(root); if (s.roots.length > 20) s.roots.shift(); }
   // Nothing to refuse before the edit: whisper what the project already has for this kind of file, once per topic.
   if (phase === "pre" && !found.length) {
     const w = whisper(root, rel, data, s);

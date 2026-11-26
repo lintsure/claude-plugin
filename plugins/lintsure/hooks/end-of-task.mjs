@@ -9,6 +9,7 @@
 // Turn it off with LINTSURE_HOOK=off.
 import { execFileSync, execSync } from "node:child_process";
 import { activity, project, wsRules, state, report } from "./lib.mjs";
+import { resolve, relative, sep } from "node:path";
 import { mkdtempSync, readFileSync, writeFileSync, existsSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, basename } from "node:path";
@@ -36,13 +37,43 @@ async function main() {
   const wsSet = KEY ? await wsRules(project(cwd)).catch(() => null) : null;
   if (wsSet?.paused || wsSet?.guards?.end?.enabled === false) quiet();
 
+  // One scan per project this session edited (Drift Guard noted them), each with its own settings. A file under a
+  // deeper project belongs to that project, not to the one above it.
+  const opened = resolve(cwd), roots = [...new Set([...(st.s.roots || []).map((r) => resolve(r)), opened])].filter((r) => existsSync(r));
+  const fresh = [];
+  for (const root of roots) {
+    const deeper = roots.filter((r) => r !== root && r.startsWith(root + sep));
+    const prefix = relative(opened, root).replace(/\\/g, "/");
+    fresh.push(...(await scanRoot(root, input, deeper)).map((f) => ({ ...f, file: prefix && !prefix.startsWith("..") ? `${prefix}/${f.file}` : f.file })));
+  }
+  if (!fresh.length) quiet();
+  const high = fresh.filter((f) => f.severity === "high");
+  // Check before calling it a problem (GitHub's lesson: findings with fixes, checked first). A Partial finding carries what
+  // Lintsure couldn't see; an exact change is offered when the rule has one.
+  const line = (f) => `- ${f.title} (${f.file}${f.line ? `:${f.line}` : ""}): ${f.fix}`
+    + (f.status === "partial" && f.unseen ? `
+  Check first: ${f.unseen}` : "")
+    + (f.patch ? `
+  Exact change: ${f.patch.old == null ? `add before line ${f.patch.line}` : `line ${f.patch.line} becomes`} ${JSON.stringify(f.patch.text.trim())}` : "");
+  if (high.length) {
+    say({
+      decision: "block",
+      reason: `Lintsure found ${high.length} high-severity issue${high.length > 1 ? "s" : ""} in files you changed:\n${high.slice(0, 3).map(line).join("\n")}${high.length > 3 ? `\n…and ${high.length - 3} more (run the lintsure scan tool).` : ""}\nFor each one marked "Check first", read the code around it: if it isn't a real problem, say so in one line with the reason and leave the code alone. Fix the real ones now if it's quick and safe, or tell the user what you found and why you left it. Don't loop on this.`,
+    });
+  }
+  // Not risky: stored in the workspace (when a key is set), and one short note for the user, no interruption.
+  say({ systemMessage: `Lintsure stored ${fresh.length} issue${fresh.length > 1 ? "s" : ""} from this session${KEY ? " in your workspace" : ""} (for example: ${fresh[0].title}, ${fresh[0].file}). Want to take a look? Ask Claude to "show the Lintsure findings".` });
+}
+
+/** Scans one project and returns the findings on files this session changed there that were not raised before. */
+async function scanRoot(cwd, input, deeper) {
   // Files this session touched: tracked changes plus new untracked files, relative to cwd.
   let changed = [];
   try {
     changed = [...git(cwd, ["diff", "--name-only", "--relative", "HEAD"]).split("\n"), ...git(cwd, ["ls-files", "--others", "--exclude-standard"]).split("\n")]
-      .map((s) => s.trim()).filter((s) => s && CODE.test(s));
-  } catch { quiet(); } // not a git repo: nothing to compare against
-  if (!changed.length) quiet();
+      .map((s) => s.trim()).filter((s) => s && CODE.test(s)).filter((s) => !deeper.some((d) => resolve(cwd, s).startsWith(d + sep)));
+  } catch { return []; } // not a git repo: nothing to compare against
+  if (!changed.length) return [];
 
   // Scan the whole project locally, writing reports to a temp folder so the repo stays untouched.
   const out = mkdtempSync(join(tmpdir(), "lintsure-hook-"));
@@ -62,11 +93,11 @@ async function main() {
     }
     execSync(`npx -y ${ENGINE} scan "${cwd.replace(/"/g, "")}" --json`, { cwd: out, stdio: "ignore", timeout: 100_000, env });
   } catch { /* the CLI exits non-zero when it finds gaps; the report is still written */ }
-  try { report = JSON.parse(readFileSync(join(out, "lintsure-report.json"), "utf8")); } catch { rmSync(out, { recursive: true, force: true }); quiet(); }
+  try { report = JSON.parse(readFileSync(join(out, "lintsure-report.json"), "utf8")); } catch { rmSync(out, { recursive: true, force: true }); return []; }
   rmSync(out, { recursive: true, force: true });
 
   const all = (report.findings || []).filter((f) => f.status !== "accepted");
-  const project = basename(cwd);
+  const name = basename(cwd);
   // Local activity log: counts and the policy code only, so the local dashboard can show runs without an account.
   activity(cwd, { scan: { open: all.length, gap: all.filter((f) => f.status === "gap").length, partial: all.filter((f) => f.status === "partial").length, policy: report.policy?.fingerprint, rules: report.rulesVersion } });
   let commit = "", branch = "";
@@ -77,50 +108,35 @@ async function main() {
   if (KEY) {
     const H = { authorization: `Bearer ${KEY}`, "content-type": "application/json" };
     try {
-      const r = await fetch(`${API}/api/v1/decisions?v=1&target=${encodeURIComponent(project)}`, { headers: H, signal: AbortSignal.timeout(4000) });
+      const r = await fetch(`${API}/api/v1/decisions?v=1&target=${encodeURIComponent(name)}`, { headers: H, signal: AbortSignal.timeout(4000) });
       if (r.ok) decided = (await r.json()).decisions || [];
     } catch { /* unreachable: keep every finding, as the contract says */ }
     try {
       const checks = [...new Set([...(report.met || []).map((m) => m.ruleId), ...(report.findings || []).map((f) => f.ruleId)])];
       await fetch(`${API}/api/v1/runs`, { method: "POST", headers: H, signal: AbortSignal.timeout(6000), body: JSON.stringify({
-        project, source: "agent", commit: /^[0-9a-f]{7,64}$/i.test(commit) ? commit : undefined, branch, version: ENGINE.split("@")[1], checks,
+        project: name, source: "agent", commit: /^[0-9a-f]{7,64}$/i.test(commit) ? commit : undefined, branch, version: ENGINE.split("@")[1], checks,
         filesChecked: report.filesChecked, held: report.held,
         findings: all.map((f) => ({ ruleId: f.ruleId, title: f.title, severity: f.severity, status: f.status, file: f.file, line: f.line, fix: f.fix, controls: f.controls })),
         scope: { notCovered: report.notCovered, rulesOff: report.rulesOff, skipped: [] },
       }) });
     } catch { /* reporting is best effort */ }
   }
-  const isDecided = (f) => decided.some((d) => d.fingerprint === `${f.ruleId}|${project}|${f.file}|${f.line}` || (d.rule_id === f.ruleId && d.file === f.file));
+  const isDecided = (f) => decided.some((d) => d.fingerprint === `${f.ruleId}|${name}|${f.file}|${f.line}` || (d.rule_id === f.ruleId && d.file === f.file));
   const norm = (p) => p.replace(/\\/g, "/").replace(/^\.\//, "");
   const touched = new Set(changed.map(norm));
   const mine = all.filter((f) => touched.has(norm(f.file)) && !isDecided(f));
-  if (!mine.length) quiet();
+  if (!mine.length) return [];
 
   // Only mention each finding once per session.
   const seenFile = join(tmpdir(), `lintsure-seen-${input.session_id || "x"}.json`);
   let seen = [];
   try { if (existsSync(seenFile)) seen = JSON.parse(readFileSync(seenFile, "utf8")); } catch { seen = []; }
-  const fp = (f) => `${f.ruleId}|${f.file}|${f.line}`;
+  const fp = (f) => `${name}|${f.ruleId}|${f.file}|${f.line}`;
   const fresh = mine.filter((f) => !seen.includes(fp(f)));
-  if (!fresh.length) quiet();
+  if (!fresh.length) return [];
   try { writeFileSync(seenFile, JSON.stringify([...seen, ...fresh.map(fp)].slice(-500))); } catch { /* fine */ }
 
-  const high = fresh.filter((f) => f.severity === "high");
-  // Check before calling it a problem (GitHub's lesson: findings with fixes, checked first). A Partial finding carries what
-  // Lintsure couldn't see; an exact change is offered when the rule has one.
-  const line = (f) => `- ${f.title} (${f.file}${f.line ? `:${f.line}` : ""}): ${f.fix}`
-    + (f.status === "partial" && f.unseen ? `
-  Check first: ${f.unseen}` : "")
-    + (f.patch ? `
-  Exact change: ${f.patch.old == null ? `add before line ${f.patch.line}` : `line ${f.patch.line} becomes`} ${JSON.stringify(f.patch.text.trim())}` : "");
-  if (high.length) {
-    say({
-      decision: "block",
-      reason: `Lintsure found ${high.length} high-severity issue${high.length > 1 ? "s" : ""} in files you changed:\n${high.slice(0, 3).map(line).join("\n")}${high.length > 3 ? `\n…and ${high.length - 3} more (run the lintsure scan tool).` : ""}\nFor each one marked "Check first", read the code around it: if it isn't a real problem, say so in one line with the reason and leave the code alone. Fix the real ones now if it's quick and safe, or tell the user what you found and why you left it. Don't loop on this.`,
-    });
-  }
-  // Not risky: stored in the workspace (when a key is set), and one short note for the user, no interruption.
-  say({ systemMessage: `Lintsure stored ${fresh.length} issue${fresh.length > 1 ? "s" : ""} from this session${KEY ? " in your workspace" : ""} (for example: ${fresh[0].title}, ${fresh[0].file}). Want to take a look? Ask Claude to "show the Lintsure findings".` });
+  return fresh;
 }
 
 main().catch(() => quiet());

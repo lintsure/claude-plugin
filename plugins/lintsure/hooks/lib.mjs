@@ -1,8 +1,8 @@
 // Shared by the Drift Guard hooks: workspace rules and memory, cached briefly so edits stay fast.
-import { readFileSync, writeFileSync, mkdirSync, appendFileSync, statSync, renameSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, appendFileSync, statSync, renameSync, existsSync, readdirSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
-import { join, basename } from "node:path";
+import { join, basename, dirname, resolve, relative, isAbsolute } from "node:path";
 import { createHash } from "node:crypto";
 import { Worker } from "node:worker_threads";
 
@@ -41,6 +41,29 @@ function record(inp) {
     mkdirSync(d, { recursive: true });
     appendFileSync(join(d, "inbox.jsonl"), JSON.stringify({ hook: basename(process.argv[1] || ""), input: normalizeForReplay(inp), expect: null }) + "\n");
   } catch { /* fine */ }
+}
+/** The project a file belongs to: the nearest folder at or above it that has a .lintsure folder. It never looks above
+ *  the folder the agent was opened in, because a .lintsure up there belongs to something the user did not open. With
+ *  none found, the session folder is the project, as before. Nearest only: an outer project's rules do not apply too. */
+export function projectFor(session, file) {
+  const top = resolve(session);
+  for (let d = dirname(resolve(top, file)); ; d = dirname(d)) {
+    const r = relative(top, d);
+    if (r.startsWith("..") || isAbsolute(r)) return top; // outside the session folder
+    if (existsSync(join(d, ".lintsure"))) return d;
+    if (d === top || dirname(d) === d) return top;
+  }
+}
+/** From here on, what this hook logs and reports belongs to this project, not to the folder the agent was opened in. */
+export const useProject = (root) => { CWD = root; };
+/** Folders one or two levels under a folder that are projects of their own (they have a .lintsure folder). */
+export function projectsUnder(root) {
+  const out = [], skip = new Set(["node_modules", ".git", "dist", "build", "vendor"]);
+  const look = (d, depth) => { let l; try { l = readdirSync(d, { withFileTypes: true }); } catch { return; }
+    for (const e of l) { if (!e.isDirectory() || e.name.startsWith(".") || skip.has(e.name)) continue; const p = join(d, e.name);
+      if (existsSync(join(p, ".lintsure"))) out.push(relative(root, p).replace(/\\/g, "/")); else if (depth < 2) look(p, depth + 1); } };
+  look(resolve(root), 1);
+  return out.slice(0, 20);
 }
 export const off = () => (process.env.LINTSURE_HOOK || "").toLowerCase() === "off" || (process.env.LINTSURE_DRIFT || "").toLowerCase() === "off";
 

@@ -3,7 +3,7 @@
 // Puts the project's rules, decisions, verified fixes and open high findings in front of the agent, so a long session
 // that lost context carries on from what the project already decided. Short on purpose. Silent on any error.
 import { createHash } from "node:crypto";
-import { quiet, say, input, off, rules, state, report } from "./lib.mjs";
+import { quiet, say, input, off, rules, state, report, projectsUnder } from "./lib.mjs";
 import { profile, summary } from "./profile.mjs";
 import { projectMap } from "./code.mjs";
 
@@ -48,6 +48,9 @@ async function main() {
     await report({ events: [], revertsSeen: undo.map((x) => x.id) });
   }
   const m = d.memory || {}, out = [];
+  // Opened over several projects: say so once, so the agent knows each file is held to its own project's rules.
+  let inside = []; try { inside = projectsUnder(inp.cwd || process.cwd()); } catch { /* fine */ }
+  if (inside.length) out.push(`This folder holds ${inside.length} project${inside.length > 1 ? "s" : ""} with rules of their own: ${inside.join(", ")}. Lintsure checks each file against the rules of the project it is in.`);
   // The project's own profile first (local only): what it already has, so the agent builds with it, not around it.
   let prof = []; try { prof = summary(profile(inp.cwd || process.cwd())); } catch { /* fine */ }
   if (prof.length) out.push("What this project already has:", ...prof);
